@@ -1,0 +1,21 @@
+{
+    "cSpell.words": [
+        "bento",
+        "passwordless",
+        "Qulf"
+    ],
+    "biome.enabled": true,
+    "editor.codeActionsOnSave": {
+        "source.action.useSortedKeys.biome": "explicit",
+        "source.fixAll.biome": "explicit",
+        "source.organizeImports.biome": "explicit",
+        "source.addMissingImports.ts": "explicit",
+        "source.removeUnusedImports": "explicit"
+    },
+    "files.associations": {
+        "*.css": "tailwindcss"
+    },
+    "editor.quickSuggestions": {
+        "strings": true
+    },
+}

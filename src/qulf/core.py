@@ -1,8 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
-from pydantic import BaseModel
-
 from qulf.adapters.base import DatabaseAdapter
+from qulf.config import QulfConfig
 from qulf.crypto import generate_session_token, hash_password, verify_password
 from qulf.exceptions import (
     InvalidCredentialsError,
@@ -11,14 +10,6 @@ from qulf.exceptions import (
 )
 from qulf.plugins.base import QulfPlugin
 from qulf.types import Session, User, UserCreate
-
-
-class QulfConfig(BaseModel):
-    """
-    Configuration schema defining core system defaults.
-    """
-
-    session_expires_in_days: int = 7
 
 
 class Qulf:
@@ -78,7 +69,7 @@ class Qulf:
 
         session_token = generate_session_token()
         expires_at = datetime.now(timezone.utc) + timedelta(
-            days=self.config.session_expires_in_days
+            days=self.config.sessions.expires_in_days
         )
         session = await self.db.create_session(
             user_id=user.id,

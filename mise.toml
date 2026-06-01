@@ -5,7 +5,7 @@ node = "24"
 pnpm = "latest"
 
 [env]
-PYTHONPATH = "src"
+PYTHONPATH = "./"
 TEST_ENV = "true"
 _.file = ".env"
 
@@ -33,6 +33,7 @@ description = "Run the test suite with pytest"
 run = "uv run pytest tests/ -v --cov --junitxml=junit.xml -o junit_family=legacy"
 depends = ["setup"]
 
+[tasks.cln]
 [tasks.clean]
 description = "Clean up cache files and build artifacts"
 run = """
@@ -52,4 +53,4 @@ run = "pnpm dev"
 
 [tasks.demo]
 description = "Run the FastAPI & SQLAlchemy authentication demo server"
-run = "uv run uvicorn demo.main:app --reload --port 8000"
+run = 'uv run uvicorn demo.main:app --reload --port ${PORT:-8000}'

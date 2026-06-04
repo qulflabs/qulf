@@ -117,7 +117,7 @@ async def test_expired_session(memory_db):
     memory_db.sessions[session.token].expires_at = datetime.now(
         timezone.utc
     ) - timedelta(days=1)
-    assert await auth.validate_session(session.token) is None
+    assert await auth.validate_session(session.token) == (None, None)
 
 
 def test_crypto_invalid_hash():
@@ -140,7 +140,7 @@ async def test_validate_session_user_deleted(memory_db):
 
     memory_db.users.clear()
 
-    assert await auth.validate_session(session.token) is None
+    assert await auth.validate_session(session.token) == (None, None)
 
 
 def test_base_plugin_routing():

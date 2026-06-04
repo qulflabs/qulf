@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 import pytest
 
 from qulf.adapters.base import DatabaseAdapter
+from qulf.config import QulfConfig
+from qulf.core import Qulf
 from qulf.types import Session, User, UserCreate, UserWithPassword
 
 
@@ -62,3 +64,11 @@ class MemoryAdapter(DatabaseAdapter):
 @pytest.fixture
 def memory_db():
     return MemoryAdapter()
+
+
+@pytest.fixture
+def auth(memory_db):
+    config = QulfConfig(
+        secret_key="super_secret_test_key_that_is_at_least_32_bytes_long"
+    )
+    return Qulf(db=memory_db, config=config)

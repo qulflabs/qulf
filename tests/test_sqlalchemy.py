@@ -1,0 +1,79 @@
+# tests/test_sqlalchemy.py
+from datetime import datetime, timedelta, timezone
+
+import pytest
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from qulf.adapters.sqlalchemy import QulfBase, SQLAlchemyAdapter
+from qulf.types import UserCreate
+
+
+@pytest_asyncio.fixture
+async def sqlite_adapter():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+
+    async with engine.begin() as conn:
+        await conn.run_sync(QulfBase.metadata.create_all)
+
+    session_maker = async_sessionmaker(engine, expire_on_commit=False)
+    return SQLAlchemyAdapter(session_maker)
+
+
+@pytest.mark.asyncio
+async def test_sqlalchemy_adapter_flow(sqlite_adapter: SQLAlchemyAdapter):
+    adapter = sqlite_adapter
+
+    user_data = UserCreate(
+        name="DB User",
+        email="db@test.com",
+        username="dbu",
+        password="p",
+        password_confirmation="p",
+    )
+
+    user = await adapter.create_user(user_data, "fake_hashed_password")
+
+    assert user.email == "db@test.com"
+
+    fetched_by_email = await adapter.get_user_by_email("db@test.com")
+    assert fetched_by_email is not None
+    assert fetched_by_email.hashed_password == "fake_hashed_password"
+
+    fetched_by_id = await adapter.get_user_by_id(user.id)
+    assert fetched_by_id is not None
+
+    assert await adapter.get_user_by_email("nobody@test.com") is None
+    assert await adapter.get_user_by_id(999) is None
+
+    expires = datetime.now(timezone.utc) + timedelta(days=1)
+    session = await adapter.create_session(user.id, "tok123", expires)
+    assert session.token == "tok123"
+
+    fetched_sess = await adapter.get_session("tok123")
+    assert fetched_sess is not None
+    assert await adapter.get_session("bad_token") is None
+
+    await adapter.delete_session("tok123")
+    assert await adapter.get_session("tok123") is None
+
+
+@pytest.mark.asyncio
+async def test_sqlalchemy_session_validation_naive(sqlite_adapter: SQLAlchemyAdapter):
+    from qulf.core import Qulf
+    from qulf.types import UserCreate
+
+    auth = Qulf(db=sqlite_adapter)
+    user_data = UserCreate(
+        name="DB User 2",
+        email="db2@test.com",
+        username="dbu2",
+        password="p",
+        password_confirmation="p",
+    )
+    await auth.sign_up(user_data)
+    session = await auth.sign_in("db2@test.com", "p")
+
+    session, user = await auth.validate_session(session.token)
+    assert user and session is not None
+    assert user.email == "db2@test.com"

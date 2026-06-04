@@ -42,7 +42,7 @@ find . -type d -name __pycache__ -exec rm -rf {} +
 """
 
 [tasks.build]
-description = "Build the package for distribution (PyPI)"
+description = "Package the project for distribution (PyPI)"
 run = "uv build"
 depends = ["setup", "lint", "test"]
 
@@ -54,3 +54,32 @@ run = "pnpm dev"
 [tasks.demo]
 description = "Run the FastAPI & SQLAlchemy authentication demo server"
 run = 'uv run uvicorn demo.main:app --reload --port ${PORT:-8000}'
+
+[tasks."web:dev"]
+description = "Run the web development server"
+dir = "web"
+run = "pnpm dev"
+
+[tasks."web:build"]
+description = "Build the site"
+dir = "web"
+run = "pnpm build"
+
+[tasks."web:start"]
+description = "Start the local production server"
+dir = "web"
+run = "pnpm start"
+
+[tasks."web:check"]
+description = "Check types and code"
+dir = "web"
+run = "pnpm check"
+
+[tasks."web:format"]
+description = "Format code and styles"
+dir = "web"
+run = "pnpm format"
+
+
+[settings.npm]
+package_manager = "pnpm"

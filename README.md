@@ -56,7 +56,7 @@ You only need to install [mise-en-place](https://mise.jdx.dev/). `mise` will aut
    ```
 3. Run tests:
    ```bash
-   mise run test
+   mise run tests
    ```
 
 To see all available development commands, simply type:

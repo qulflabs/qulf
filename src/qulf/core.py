@@ -40,11 +40,20 @@ class Qulf:
 
         Raises UserAlreadyExistsError if the email address is already registered.
         """
+        # EXECUTE BEFORE Hooks
+        for plugin in self.plugins.values():
+            user_data = await plugin.before_user_create(user_data)
+
         user_exists = await self.db.get_user_by_email(user_data.email)
         if user_exists:
             raise UserAlreadyExistsError("Email already associated with an account.")
         hashed_password = hash_password(user_data.password)
         user = await self.db.create_user(user_data, hashed_password)
+
+        # EXECUTE AFTER Hooks
+        for plugin in self.plugins.values():
+            await plugin.after_user_create(user)
+
         return user
 
     async def sign_in(
@@ -60,6 +69,10 @@ class Qulf:
         Accepts optional network and client
         identifiers for security logging and auditing.
         """
+        # EXECUTE BEFORE Hook
+        for plugin in self.plugins.values():
+            await plugin.before_sign_in(email, ip_address)
+
         user = await self.db.get_user_by_email(email)
         if not user:
             raise UserNotFoundError("User not found.")
@@ -78,6 +91,11 @@ class Qulf:
             ip_address=ip_address,
             user_agent=user_agent,
         )
+
+        # EXECUTE BEFORE Hook
+        for plugin in self.plugins.values():
+            await plugin.after_sign_in(user, session)
+
         return session
 
     async def validate_session(

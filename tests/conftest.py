@@ -1,8 +1,11 @@
 from datetime import datetime, timezone
 
 import pytest
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from qulf.adapters.base import DatabaseAdapter
+from qulf.adapters.sqlalchemy import QulfBase, SQLAlchemyAdapter
 from qulf.config import QulfConfig
 from qulf.core import Qulf
 from qulf.types import Session, User, UserCreate, UserWithPassword
@@ -72,3 +75,15 @@ def auth(memory_db):
         secret_key="super_secret_test_key_that_is_at_least_32_bytes_long"
     )
     return Qulf(db=memory_db, config=config)
+
+
+@pytest_asyncio.fixture
+async def sqlite_adapter():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+
+    # Create the tables
+    async with engine.begin() as conn:
+        await conn.run_sync(QulfBase.metadata.create_all)
+
+    session_maker = async_sessionmaker(engine, expire_on_commit=False)
+    return SQLAlchemyAdapter(session_maker)

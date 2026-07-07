@@ -2,22 +2,9 @@
 from datetime import datetime, timedelta, timezone
 
 import pytest
-import pytest_asyncio
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from qulf.adapters.sqlalchemy import QulfBase, SQLAlchemyAdapter
+from qulf.adapters.sqlalchemy import SQLAlchemyAdapter
 from qulf.types import UserCreate
-
-
-@pytest_asyncio.fixture
-async def sqlite_adapter():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-
-    async with engine.begin() as conn:
-        await conn.run_sync(QulfBase.metadata.create_all)
-
-    session_maker = async_sessionmaker(engine, expire_on_commit=False)
-    return SQLAlchemyAdapter(session_maker)
 
 
 @pytest.mark.asyncio

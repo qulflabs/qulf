@@ -81,3 +81,9 @@ class QulfPlugin:
             `ip_address`: IP address of the user
         """
         pass  # pragma: no cover
+
+    def get_custom_columns(self) -> dict[str, dict[str, Any]]:
+        """
+        Allows plugins to inject columns into the core tables.
+        """
+        return {}  # pragma: no cover

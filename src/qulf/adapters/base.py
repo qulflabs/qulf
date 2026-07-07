@@ -57,3 +57,10 @@ class DatabaseAdapter(ABC):
         Removes a session token from the database.
         """
         pass  # pragma: no cover
+
+    def inject_custom_columns(self, custom_columns: dict[str, dict[str, type]]) -> None:
+        """
+        Dynamically injects plugin-requested columns into the database schema.
+        Expected format: {"user": {"two_factor_secret": str}, "session": {...}}
+        """
+        pass  # pragma: no cover

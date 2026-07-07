@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, String, delete, select
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -94,6 +94,23 @@ class SQLAlchemyAdapter(DatabaseAdapter):
         self.session_maker = session_maker
         self.user_model = user_model
         self.session_model = session_model
+
+        self.models = {"user": self.user_model, "session": self.session_model}
+
+    def inject_custom_columns(self, custom_columns: dict[str, dict[str, Any]]) -> None:
+        type_mapping = {str: String, bool: Boolean, int: Integer}
+
+        # Iterate dynamically over ANY table the plugins request
+        for table_name, columns in custom_columns.items():
+            # Check if Qulf actually manages this table
+            model = self.models.get(table_name)
+            if not model:
+                continue  # Ignore if  plugin tries to inject into a table we don't know
+
+            for col_name, col_type in columns.items():
+                if not hasattr(model, col_name):
+                    sa_type = type_mapping.get(col_type, String)
+                    setattr(model, col_name, mapped_column(sa_type, nullable=True))
 
     async def get_user_by_email(self, email: str) -> UserWithPassword | None:
         # We retrieve short-lived sessions directly inside database operations to

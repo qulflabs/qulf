@@ -29,10 +29,26 @@ class Qulf:
         self.db = db
         self.config = config or QulfConfig()
         self.plugins: dict[str, QulfPlugin] = {}
+
+        aggregated_columns: dict[str, dict[str, type]] = {}
+
         if plugins:
             for plugin in plugins:
                 plugin.setup(self)
                 self.plugins[plugin.name] = plugin
+
+                cols = plugin.get_custom_columns()
+
+                # Dynamically iterate over ANY table the plugin requests
+                for table_name, columns in cols.items():
+                    if table_name not in aggregated_columns:
+                        aggregated_columns[table_name] = {}
+
+                    aggregated_columns[table_name].update(columns)
+
+        # Pass the dictionary to the database adapter
+        if hasattr(self.db, "inject_custom_columns"):
+            self.db.inject_custom_columns(aggregated_columns)
 
     async def sign_up(self, user_data: UserCreate) -> User:
         """
@@ -92,7 +108,7 @@ class Qulf:
             user_agent=user_agent,
         )
 
-        # EXECUTE BEFORE Hook
+        # EXECUTE AFTER Hook
         for plugin in self.plugins.values():
             await plugin.after_sign_in(user, session)
 
@@ -113,8 +129,8 @@ class Qulf:
 
         expires_at = session.expires_at
         # SQLite and other relational databases loaded through standard SQLAlchemy
-        # adapters retrieve datetimes as offset-naive objects. so we cast
-        # naive datetimes to UTC to allow comparisons against timezone-aware datetimes.
+        # adapters retrieve datetimes as offset-naive objects. We cast naive datetimes
+        # to UTC to allow comparisons against timezone-aware datetimes.
         if expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=timezone.utc)
 

@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
 
-from qulf.types import Session, User, UserCreate, UserWithPassword
+from qulf.types import Account, AccountCreate, Session, User, UserCreate, UserWithPassword
 
 
 class DatabaseAdapter(ABC):
@@ -55,6 +55,22 @@ class DatabaseAdapter(ABC):
     async def delete_session(self, token: str) -> None:
         """
         Removes a session token from the database.
+        """
+        pass  # pragma: no cover
+
+    @abstractmethod
+    async def create_account(self, account_data: AccountCreate) -> Account:
+        """
+        Inserts a new OAuth account record and links it to a user.
+        """
+        pass  # pragma: no cover
+
+    @abstractmethod
+    async def get_account_by_provider(
+        self, provider_id: str, account_id: str
+    ) -> Account | None:
+        """
+        Retrieves an OAuth account using the provider's name and the provider's user ID.
         """
         pass  # pragma: no cover
 

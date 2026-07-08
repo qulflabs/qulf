@@ -67,3 +67,26 @@ class Session(CoreModel):
     token: str
     ip_address: str | None = None
     user_agent: str | None = None
+
+
+class AccountCreate(BaseModel):
+    """
+    Validation schema for linking an OAuth account.
+    """
+
+    user_id: int | str
+    account_id: str
+    provider_id: str
+    access_token: str | None = None
+    refresh_token: str | None = None
+    expires_at: datetime | None = None
+    scope: str | None = None
+    id_token: str | None = None
+
+
+class Account(CoreModel, AccountCreate):
+    """
+    Standard representation of an OAuth account linked to a user.
+    """
+
+    pass

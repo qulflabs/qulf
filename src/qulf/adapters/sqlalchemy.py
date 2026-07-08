@@ -7,12 +7,10 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from qulf.adapters.base import DatabaseAdapter
 from qulf.types import (
+    Account as QulfAccountType,
+    AccountCreate,
     Session as QulfSessionType,
-)
-from qulf.types import (
     User as QulfUserType,
-)
-from qulf.types import (
     UserCreate,
     UserWithPassword,
 )
@@ -80,6 +78,36 @@ class DefaultSession(QulfBase, SessionMixin):
     user_id: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"))
 
 
+class AccountMixin:
+    """
+    SQLAlchemy column definitions for the Qulf Account model.
+    """
+
+    provider_id: Mapped[str] = mapped_column(String, index=True)
+    account_id: Mapped[str] = mapped_column(String, index=True)
+
+    access_token: Mapped[str | None] = mapped_column(String, nullable=True)
+    refresh_token: Mapped[str | None] = mapped_column(String, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    scope: Mapped[str | None] = mapped_column(String, nullable=True)
+    id_token: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class DefaultAccount(QulfBase, AccountMixin):
+    """Default Account table schema ('qulf_account') used if no custom model is supplied."""
+
+    __tablename__ = "qulf_account"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"))
+
+
 class SQLAlchemyAdapter(DatabaseAdapter):
     """
     Concrete DatabaseAdapter subclass leveraging SQLAlchemy 2.0 async capabilities.
@@ -90,12 +118,18 @@ class SQLAlchemyAdapter(DatabaseAdapter):
         session_maker: async_sessionmaker[AsyncSession],
         user_model: Any = DefaultUser,
         session_model: Any = DefaultSession,
+        account_model: Any = DefaultAccount,
     ):
         self.session_maker = session_maker
         self.user_model = user_model
         self.session_model = session_model
+        self.account_model = account_model
 
-        self.models = {"user": self.user_model, "session": self.session_model}
+        self.models = {
+            "user": self.user_model,
+            "session": self.session_model,
+            "account": self.account_model,
+        }
 
     def inject_custom_columns(self, custom_columns: dict[str, dict[str, Any]]) -> None:
         type_mapping = {str: String, bool: Boolean, int: Integer}
@@ -187,3 +221,35 @@ class SQLAlchemyAdapter(DatabaseAdapter):
             stmt = delete(self.session_model).where(self.session_model.token == token)
             await session.execute(stmt)
             await session.commit()
+
+    async def create_account(self, account_data: AccountCreate) -> QulfAccountType:
+        async with self.session_maker() as session:
+            new_account = self.account_model(
+                user_id=account_data.user_id,
+                account_id=account_data.account_id,
+                provider_id=account_data.provider_id,
+                access_token=account_data.access_token,
+                refresh_token=account_data.refresh_token,
+                expires_at=account_data.expires_at,
+                scope=account_data.scope,
+                id_token=account_data.id_token,
+                created_at=datetime.now(timezone.utc),
+            )
+            session.add(new_account)
+            await session.commit()
+            await session.refresh(new_account)
+            return QulfAccountType.model_validate(new_account, from_attributes=True)
+
+    async def get_account_by_provider(
+        self, provider_id: str, account_id: str
+    ) -> QulfAccountType | None:
+        async with self.session_maker() as session:
+            stmt = select(self.account_model).where(
+                self.account_model.provider_id == provider_id,
+                self.account_model.account_id == account_id,
+            )
+            result = await session.execute(stmt)
+            db_account = result.scalar_one_or_none()
+            if not db_account:
+                return None
+            return QulfAccountType.model_validate(db_account, from_attributes=True)

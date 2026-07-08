@@ -47,10 +47,12 @@ async def test_sqlalchemy_adapter_flow(sqlite_adapter: SQLAlchemyAdapter):
 
 @pytest.mark.asyncio
 async def test_sqlalchemy_session_validation_naive(sqlite_adapter: SQLAlchemyAdapter):
+    from qulf.config import QulfConfig
     from qulf.core import Qulf
     from qulf.types import UserCreate
 
-    auth = Qulf(db=sqlite_adapter)
+    config = QulfConfig(secret_key="super_secret_test_key_that_is_at_least_32_bytes_long")
+    auth = Qulf(db=sqlite_adapter, config=config)
     user_data = UserCreate(
         name="DB User 2",
         email="db2@test.com",

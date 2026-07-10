@@ -71,6 +71,8 @@ def serve_qulf(auth: Qulf) -> APIRouter:
                     qulf_request = QulfRequest(
                         body=body,
                         query_params=dict(request.query_params),
+                        path_params=request.path_params,
+                        cookies=request.cookies,
                         ip_address=request.client.host if request.client else None,
                         user_agent=request.headers.get("user-agent"),
                     )
@@ -78,6 +80,9 @@ def serve_qulf(auth: Qulf) -> APIRouter:
                     qulf_response = await handler(qulf_request)
 
                     response.status_code = qulf_response.status_code
+
+                    for key, value in qulf_response.headers.items():
+                        response.headers[key] = value
 
                     for cookie in qulf_response.set_cookies:
                         response.set_cookie(

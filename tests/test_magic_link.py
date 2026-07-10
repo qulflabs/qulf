@@ -93,25 +93,35 @@ async def test_magic_link_exceptions(memory_db, email_sender):
 
 
 def test_magic_link_fastapi_routes(memory_db, email_sender):
+    from qulf import QulfConfig
     from qulf.frameworks.fastapi import serve_qulf
 
     plugin = MagicLinkPlugin(send_email_func=email_sender.send)
-    auth = Qulf(db=memory_db, plugins=[plugin])
 
+
+    config = QulfConfig(
+        secret_key="super_secret_test_key_that_is_at_least_32_bytes_long"
+    )
+    auth = Qulf(db=memory_db, config=config, plugins=[plugin])
+
+    # 3. Mount to FastAPI
     app = FastAPI()
     app.include_router(serve_qulf(auth))
     client = TestClient(app)
 
+    # 4. Test /send
     res_send = client.post("/magic-link/send", json={"email": "api@test.com"})
     assert res_send.status_code == 200
     assert email_sender.last_email == "api@test.com"
 
     token = email_sender.last_token
 
+    # 5. Test /verify
     res_verify = client.post("/magic-link/verify", json={"token": token})
     assert res_verify.status_code == 200
     assert "qulf_session" in res_verify.cookies
     assert res_verify.json()["user"]["email"] == "api@test.com"
 
+    # 6. Test /verify with bad token
     res_bad = client.post("/magic-link/verify", json={"token": "garbage"})
     assert res_bad.status_code == 400

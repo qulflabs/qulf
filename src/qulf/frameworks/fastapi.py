@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from qulf.core import Qulf
 from qulf.exceptions import QulfException
 from qulf.frameworks.base import SignInRequest
+from qulf.routing import QulfRequest
 from qulf.types import User, UserCreate
 
 
@@ -56,8 +57,48 @@ def serve_qulf(auth: Qulf) -> APIRouter:
         return {"message": "Signed out"}
 
     for plugin in auth.plugins.values():
-        plugin_router = plugin.get_fastapi_router(auth)
-        if plugin_router:
-            router.include_router(plugin_router)
+        for qulf_route in plugin.get_routes():
+
+            def make_endpoint(handler):
+                async def dynamic_endpoint(request: Request, response: Response):
+                    body = {}
+                    if request.method in ["POST", "PUT", "PATCH"]:
+                        try:
+                            body = await request.json()
+                        except Exception:
+                            pass
+
+                    qulf_request = QulfRequest(
+                        body=body,
+                        query_params=dict(request.query_params),
+                        ip_address=request.client.host if request.client else None,
+                        user_agent=request.headers.get("user-agent"),
+                    )
+
+                    qulf_response = await handler(qulf_request)
+
+                    response.status_code = qulf_response.status_code
+
+                    for cookie in qulf_response.set_cookies:
+                        response.set_cookie(
+                            key=cookie.key,
+                            value=cookie.value,
+                            httponly=cookie.httponly,
+                            secure=cookie.secure,
+                            samesite=cookie.samesite,
+                        )
+
+                    for cookie_name in qulf_response.delete_cookies:
+                        response.delete_cookie(key=cookie_name)
+
+                    return qulf_response.body
+
+                return dynamic_endpoint
+
+            router.add_api_route(
+                path=qulf_route.path,
+                endpoint=make_endpoint(qulf_route.handler),
+                methods=qulf_route.methods,
+            )
 
     return router

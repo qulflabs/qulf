@@ -1,5 +1,5 @@
 # src/qulf/config.py
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -27,6 +27,7 @@ class QulfConfig(BaseSettings):
 
     cookies: CookieConfig = CookieConfig()
     sessions: SessionConfig = SessionConfig()
+    oauth_providers: list[Any] = []
 
     model_config = SettingsConfigDict(
         env_prefix="QULF_", env_nested_delimiter="__", env_file=".env", extra="ignore"

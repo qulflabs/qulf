@@ -13,15 +13,16 @@ from qulf.exceptions import (
     SessionExpiredError,
 )
 from qulf.plugins.base import QulfPlugin
+from qulf.routing import CookieOptions, QulfRequest, QulfResponse, QulfRoute
 from qulf.types import Session, User, UserCreate
 
 
 class MagicLinkPlugin(QulfPlugin):
     """
-    A stateless passwordless authentication plugin.
+    **A stateless passwordless authentication plugin.**
 
     Generates time-bound, cryptographically signed JSON Web Tokens (JWT)
-    dispatched to the user's email, permitting credential-free sign-in.
+    dispatched to the user's email, allowing credential-free sign-in's.
     """
 
     name = "magic_link"
@@ -40,8 +41,8 @@ class MagicLinkPlugin(QulfPlugin):
 
     async def generate_and_send(self, email: str) -> None:
         """
-        Generates a stateless JWT token and passes it
-        to the user-supplied dispatch handler.
+        **Generates a stateless JWT token and passes it
+        to the user-supplied dispatch handler.**
         """
         if not self.auth:
             raise ConfigurationError(
@@ -60,7 +61,7 @@ class MagicLinkPlugin(QulfPlugin):
         self, token: str, ip_address: str | None = None, user_agent: str | None = None
     ) -> tuple[Session, User]:
         """
-        Verifies the magic link token.
+        **Verifies the magic link token.**
 
         Creates the user profile if it doesn't exist yet
         it initiates a standard session.
@@ -82,7 +83,6 @@ class MagicLinkPlugin(QulfPlugin):
 
         user = await self.auth.db.get_user_by_email(email)
         if not user:
-            # Automatic Registration:
             # If a user joins using a magic link, we automatically onboard them.
             # We generate a cryptographically strong, secure random password so the
             # account satisfies the DB structure requirements and remains secure
@@ -111,47 +111,55 @@ class MagicLinkPlugin(QulfPlugin):
         )
         return session, user
 
-    def get_fastapi_router(self, auth: Any) -> Any:
-        """
-        FastAPI router implementation mapping magic link routes.
-        """
-        from fastapi import APIRouter, HTTPException, Request, Response
-        from pydantic import BaseModel
+    def get_routes(self) -> list[QulfRoute]:
+        """Expose framework-agnostic routes for the Magic Link flow."""
 
-        router = APIRouter(prefix="/magic-link", tags=["Magic Link"])
+        if not self.auth:
+            return []
 
-        class SendRequest(BaseModel):
-            email: str
+        async def send_magic_link(request: QulfRequest) -> QulfResponse:
+            email = request.body.get("email")
+            if not email:
+                return QulfResponse(
+                    status_code=400, body={"detail": "Email is required"}
+                )
 
-        @router.post("/send")
-        async def send_magic_link_route(payload: SendRequest) -> dict[str, str]:
-            await self.generate_and_send(payload.email)
-            return {"message": "Magic link sent"}
+            await self.generate_and_send(email)
+            return QulfResponse(status_code=200, body={"message": "Magic link sent"})
 
-        class VerifyRequest(BaseModel):
-            token: str
-
-        @router.post("/verify")
-        async def verify_magic_link_route(
-            payload: VerifyRequest, request: Request, response: Response
-        ) -> dict[str, Any]:
-            ip = request.client.host if request.client else None
-            user_agent = request.headers.get("user-agent")
+        async def verify_magic_link(request: QulfRequest) -> QulfResponse:
+            token = request.body.get("token")
+            if not token:
+                return QulfResponse(
+                    status_code=400, body={"detail": "Token is required"}
+                )
 
             try:
                 session, user = await self.verify_and_sign_in(
-                    payload.token, ip, user_agent
+                    token, request.ip_address, request.user_agent
                 )
             except QulfException as e:
-                raise HTTPException(status_code=400, detail=str(e))
+                return QulfResponse(status_code=400, body={"detail": str(e)})
 
-            response.set_cookie(
-                key=auth.config.cookies.name,
+            cookie = CookieOptions(
+                key=self.auth.config.cookies.name,
                 value=session.token,
-                httponly=auth.config.cookies.http_only,
-                secure=auth.config.cookies.secure,
-                samesite=auth.config.cookies.same_site,
+                httponly=self.auth.config.cookies.http_only,
+                secure=self.auth.config.cookies.secure,
+                samesite=self.auth.config.cookies.same_site,
             )
-            return {"message": "Signed in successfully", "user": user}
 
-        return router
+            return QulfResponse(
+                status_code=200,
+                set_cookies=[cookie],
+                body={"message": "Signed in successfully", "user": user.model_dump()},
+            )
+
+        return [
+            QulfRoute(
+                path="/magic-link/send", methods=["POST"], handler=send_magic_link
+            ),
+            QulfRoute(
+                path="/magic-link/verify", methods=["POST"], handler=verify_magic_link
+            ),
+        ]

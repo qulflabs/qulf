@@ -146,6 +146,5 @@ async def test_validate_session_user_deleted(memory_db):
 def test_base_plugin_routing():
     from qulf.plugins.base import QulfPlugin
 
-    plugin = QulfPlugin()
-    plugin.name = "dummy"
-    assert plugin.get_fastapi_router(None) is None
+    base_plugin = QulfPlugin()
+    assert base_plugin.get_routes() == []

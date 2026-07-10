@@ -1,6 +1,7 @@
-from qulf.types import Session
-from qulf.types import User, UserCreate
 from typing import Any
+
+from qulf.routing import QulfRoute
+from qulf.types import Session, User, UserCreate
 
 
 class QulfPlugin:
@@ -23,15 +24,11 @@ class QulfPlugin:
         """
         pass  # pragma: no cover
 
-    def get_fastapi_router(self, auth: Any) -> Any | None:
+    def get_routes(self) -> list[QulfRoute]:
         """
-        **Optional hook returning a FastAPI APIRouter to inject plugin-specific endpoints.**
-
-        Defaults to returning `None` because some plugins may act as pure internal
-        middleware or operational hooks
-        without needing any public API endpoints.
+        **Returns a list of generic routes to be mounted by the framework.**
         """
-        return None
+        return []  # pragma: no cover
 
     async def before_user_create(self, user_data: UserCreate) -> UserCreate:
         """

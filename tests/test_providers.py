@@ -32,14 +32,15 @@ class MockOAuthProvider(BaseOAuthProvider):
         )
 
 
-def test_base_oauth_provider_cannot_be_instantiated():
+def test_base_oauth_provider_cannot_be_instantiated() -> None:
+
     with pytest.raises(TypeError):
-        BaseOAuthProvider(
+        BaseOAuthProvider(  # type: ignore[abstract]
             client_id="id", client_secret="secret", redirect_uri="http://localhost"
         )
 
 
-def test_mock_oauth_provider_instantiation():
+def test_mock_oauth_provider_instantiation() -> None:
     provider = MockOAuthProvider(
         client_id="id",
         client_secret="secret",
@@ -53,7 +54,7 @@ def test_mock_oauth_provider_instantiation():
     assert provider.scopes == ["read", "write"]
 
 
-def test_oauth_user_profile_validation():
+def test_oauth_user_profile_validation() -> None:
     # Valid profile
     profile = OAuthUserProfile(id="123", email="test@example.com")
     assert profile.id == "123"
@@ -65,7 +66,7 @@ def test_oauth_user_profile_validation():
         OAuthUserProfile(id="123", email="not_an_email")
 
 
-def test_oauth_token_response_validation():
+def test_oauth_token_response_validation() -> None:
     # Valid response
     token = OAuthTokenResponse(access_token="abc", token_type="Bearer")
     assert token.access_token == "abc"
@@ -74,11 +75,11 @@ def test_oauth_token_response_validation():
 
     # Missing required field
     with pytest.raises(ValidationError):
-        OAuthTokenResponse(access_token="abc")  # Missing token_type
+        OAuthTokenResponse(access_token="abc")  # type: ignore[call-arg]
 
 
 @pytest.mark.asyncio
-async def test_github_provider_authorization_url():
+async def test_github_provider_authorization_url() -> None:
     from qulf.providers.github import GitHubProvider
     provider = GitHubProvider(client_id="gh_id", client_secret="gh_secret", redirect_uri="http://localhost")
     url = await provider.get_authorization_url("state123")
@@ -90,7 +91,7 @@ async def test_github_provider_authorization_url():
 
 
 @pytest.mark.asyncio
-async def test_google_provider_authorization_url():
+async def test_google_provider_authorization_url() -> None:
     from qulf.providers.google import GoogleProvider
     provider = GoogleProvider(client_id="go_id", client_secret="go_secret", redirect_uri="http://localhost")
     url = await provider.get_authorization_url("state123")

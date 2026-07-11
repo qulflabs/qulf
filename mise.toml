@@ -14,6 +14,7 @@ _.file = ".env"
 description = "Set up the virtual environment and install dependencies"
 run = """
 uv venv --allow-existing
+uv sync
 uv pip install -e ".[dev,test]"
 """
 
@@ -45,11 +46,6 @@ find . -type d -name __pycache__ -exec rm -rf {} +
 description = "Package the project for distribution (PyPI)"
 run = "uv build"
 depends = ["setup", "lint", "test"]
-
-[tasks.docs]
-description = "Run the Fumadocs development server"
-dir = "docs"
-run = "pnpm dev"
 
 [tasks.demo]
 description = "Run the FastAPI & SQLAlchemy authentication demo server"

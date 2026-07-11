@@ -47,7 +47,11 @@ python-version = "3.14.0"
 preset = "legacy"
 
 [dependency-groups]
-dev = ["aiosqlite>=0.22.1", "httpx>=0.28.1"]
+dev = [
+    "aiosqlite>=0.22.1",
+    "httpx>=0.28.1",
+    "respx>=0.23.1",
+]
 
 [build-system]
 requires = ["uv_build >= 0.11.7, <0.12.0"]

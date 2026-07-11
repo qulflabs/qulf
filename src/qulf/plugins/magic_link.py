@@ -5,7 +5,7 @@ from typing import Any
 
 import jwt
 
-from qulf.crypto import generate_session_token, hash_password
+from qulf.crypto import hash_password
 from qulf.exceptions import (
     ConfigurationError,
     InvalidTokenError,
@@ -84,7 +84,7 @@ class MagicLinkPlugin(QulfPlugin):
         user = await self.auth.db.get_user_by_email(email)
         if not user:
             # If a user joins using a magic link, we automatically onboard them.
-            # We generate a cryptographically strong, secure random password so the
+            # We generate a strong, secure random password so the
             # account satisfies the DB structure requirements and remains secure
             # until they choose to associate a standard credential with their profile.
             random_pass = secrets.token_urlsafe(32)
@@ -97,18 +97,8 @@ class MagicLinkPlugin(QulfPlugin):
             )
             user = await self.auth.db.create_user(user_data, hash_password(random_pass))
 
-        session_token = generate_session_token()
-        expires_at = datetime.now(timezone.utc) + timedelta(
-            days=self.auth.config.sessions.expires_in_days
-        )
+        session = await self.auth.create_session(user, ip_address, user_agent)
 
-        session = await self.auth.db.create_session(
-            user_id=user.id,
-            token=session_token,
-            expires_at=expires_at,
-            ip_address=ip_address,
-            user_agent=user_agent,
-        )
         return session, user
 
     def get_routes(self) -> list[QulfRoute]:

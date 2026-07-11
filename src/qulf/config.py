@@ -1,4 +1,3 @@
-# src/qulf/config.py
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -15,7 +14,7 @@ class CookieConfig(BaseModel):
 class SessionConfig(BaseModel):
     expires_in_days: int = 7
     update_age_days: int = 1
-    strategy: str = "database"
+    strategy: Literal["jwt", "database"] = "database"
 
 
 class QulfConfig(BaseSettings):

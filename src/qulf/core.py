@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
+import jwt
+
 from qulf.adapters.base import DatabaseAdapter
 from qulf.config import QulfConfig
 from qulf.crypto import generate_session_token, hash_password, verify_password
@@ -96,17 +98,7 @@ class Qulf:
         if not verify:
             raise InvalidCredentialsError("Password incorrect")
 
-        session_token = generate_session_token()
-        expires_at = datetime.now(timezone.utc) + timedelta(
-            days=self.config.sessions.expires_in_days
-        )
-        session = await self.db.create_session(
-            user_id=user.id,
-            token=session_token,
-            expires_at=expires_at,
-            ip_address=ip_address,
-            user_agent=user_agent,
-        )
+        session = await self.create_session(user, ip_address, user_agent)
 
         # EXECUTE AFTER Hook
         for plugin in self.plugins.values():
@@ -114,34 +106,88 @@ class Qulf:
 
         return session
 
-    async def validate_session(
-        self, token: str
-    ) -> tuple[Session, User] | tuple[None, None]:
-        """
-        Checks if a given session token is valid and active.
+    async def create_session(
+        self, user: User, ip_address: str | None = None, user_agent: str | None = None
+    ) -> Session:
+        """Centralized method to create a session based on the configured strategy."""
+        expires_at = datetime.now(timezone.utc) + timedelta(
+            days=self.config.sessions.expires_in_days
+        )
 
-        Returns a tuple of the active (Session, User) or (None, None) if the session
-        does not exist or has expired.
-        """
+        if self.config.sessions.strategy == "jwt":
+            payload = {
+                "sub": str(user.id),
+                "email": user.email,
+                "name": user.name or "",
+                "username": user.username,
+                "created_at": user.created_at.timestamp(),
+                "exp": expires_at,
+            }
+            session_token = jwt.encode(
+                payload, self.config.secret_key, algorithm="HS256"
+            )
+        else:
+            session_token = generate_session_token()
+
+        session = await self.db.create_session(
+            user_id=user.id,
+            token=session_token,
+            expires_at=expires_at,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+        return session
+
+    async def validate_session(self, token: str) -> tuple[Session, User] | None:
+        """Validates a session token. If strategy is 'jwt', it validates statelessly."""
+
+        # STATELESS JWT VALIDATION
+        if self.config.sessions.strategy == "jwt":
+            try:
+                payload = jwt.decode(
+                    token, self.config.secret_key, algorithms=["HS256"]
+                )
+
+                user = User(
+                    id=payload["sub"],
+                    email=payload["email"],
+                    name=payload["name"],
+                    username=payload["username"],
+                    created_at=datetime.fromtimestamp(
+                        payload["created_at"], tz=timezone.utc
+                    ),
+                )
+                session = Session(
+                    id="jwt",
+                    user_id=user.id,
+                    token=token,
+                    created_at=datetime.fromtimestamp(
+                        payload["created_at"], tz=timezone.utc
+                    ),
+                    expires_at=datetime.fromtimestamp(payload["exp"], tz=timezone.utc),
+                )
+                return (session, user)
+            except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+                return None
+
+        # STATEFUL DATABASE VALIDATION
         session = await self.db.get_session(token=token)
         if not session:
-            return (None, None)
+            return None
 
+        # Fix naive datetimes from SQLite
         expires_at = session.expires_at
-        # SQLite and other relational databases loaded through standard SQLAlchemy
-        # adapters retrieve datetimes as offset-naive objects. We cast naive datetimes
-        # to UTC to allow comparisons against timezone-aware datetimes.
         if expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=timezone.utc)
 
         if expires_at < datetime.now(timezone.utc):
             await self.db.delete_session(token=token)
-            return (None, None)
+            return None
 
         user = await self.db.get_user_by_id(session.user_id)
         if not user:
-            # The session is orphaned if the associated user account has been deleted.
-            return (None, None)
+            return None
+
         return (session, user)
 
     async def sign_out(self, token: str) -> None:

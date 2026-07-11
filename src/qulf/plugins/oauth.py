@@ -2,7 +2,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from qulf.crypto import generate_session_token, hash_password
+from qulf.crypto import hash_password
 from qulf.exceptions import QulfException
 from qulf.plugins.base import QulfPlugin
 from qulf.routing import CookieOptions, QulfRequest, QulfResponse, QulfRoute
@@ -140,19 +140,8 @@ class OAuthPlugin(QulfPlugin):
                 )
                 await self.auth.db.create_account(account_data)
 
-
-            # Create Session
-            session_token = generate_session_token()
-            expires_at = datetime.now(timezone.utc) + timedelta(
-                days=self.auth.config.sessions.expires_in_days
-            )
-
-            session = await self.auth.db.create_session(
-                user_id=user.id,
-                token=session_token,
-                expires_at=expires_at,
-                ip_address=request.ip_address,
-                user_agent=request.user_agent,
+            session = await self.auth.create_session(
+                user, request.ip_address, request.user_agent
             )
 
             session_cookie = CookieOptions(

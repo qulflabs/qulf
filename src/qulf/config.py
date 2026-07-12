@@ -20,9 +20,10 @@ class SessionConfig(BaseModel):
 class QulfConfig(BaseSettings):
     """Main Configuration for Qulf"""
 
+    project_name: str = "Qulf"
+    base_url: str = "http://localhost:8000"
     # Requires a 32+ character string for security!
     secret_key: str = Field(..., min_length=32)
-    base_url: str = "http://localhost:8000"
 
     cookies: CookieConfig = CookieConfig()
     sessions: SessionConfig = SessionConfig()

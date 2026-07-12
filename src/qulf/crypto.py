@@ -13,7 +13,7 @@ def generate_session_token() -> str:
     # placed in HTTP headers, cookies, or URL queries without escaping.
     return secrets.token_urlsafe(32)
 
-
+# total coincidence :)
 ph = PasswordHasher()
 
 

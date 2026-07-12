@@ -1,0 +1,195 @@
+from typing import TYPE_CHECKING
+
+from jwt import ExpiredSignatureError, InvalidTokenError
+
+from qulf.exceptions import QulfException
+from qulf.routing import CookieOptions
+
+if TYPE_CHECKING:
+    from qulf.core import Qulf
+
+from datetime import datetime, timedelta, timezone
+
+import jwt
+import pyotp
+
+from qulf import QulfRequest, QulfResponse, QulfRoute
+from qulf.exceptions import Requires2FAError
+from qulf.plugins import QulfPlugin
+from qulf.types import Session, User
+
+
+class TOTPPlugin(QulfPlugin):
+    name = "totp"
+    auth: "Qulf"
+
+    def setup(self, auth):
+        self.auth = auth
+
+    def get_custom_columns(self):
+        return {"user": {"two_factor_enabled": bool, "two_factor_secret": str}}
+
+    async def after_sign_in(self, user: User, session: Session) -> None:
+        if not user.model_extra or not user.model_extra.get("two_factor_enabled"):
+            return
+
+        await self.auth.db.delete_session(session.token)
+
+        # 3. Create a temporary JWT payload
+        payload = {
+            "sub": user.id,
+            "type": "2fa_pending",
+            "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
+        }
+        temp_token = jwt.encode(payload, self.auth.config.secret_key)
+
+        # 4. Raise the error to stop the HTTP response and pass the token to the frontend
+        raise Requires2FAError(temp_token)
+
+    def get_routes(self) -> list[QulfRoute]:
+        if not self.auth:
+            return []
+
+        async def totp_setup(request: QulfRequest) -> QulfResponse:
+            token = request.cookies.get(self.auth.config.cookies.name)
+            if not token:
+                return QulfResponse(
+                    status_code=400, body={"detail": "Session token missing."}
+                )
+
+            result = await self.auth.validate_session(token)
+            if not result:
+                return QulfResponse(
+                    status_code=400, body={"detail": "Invalid or expired session."}
+                )
+            session, user = result
+
+            secret = pyotp.random_base32()
+
+            await self.auth.db.update_user(user.id, {"two_factor_secret": secret})
+
+            uri = pyotp.TOTP(secret).provisioning_uri(
+                name=user.email, issuer_name=self.auth.config.project_name
+            )
+            return QulfResponse(status_code=200, body={"uri": uri})
+
+        # pyrefly: ignore [bad-return]
+        async def totp_enable(request: QulfRequest) -> QulfResponse:
+            token = request.cookies.get(self.auth.config.cookies.name)
+            code = request.body.get("code")
+            if not code:
+                return QulfResponse(
+                    status_code=400, body={"detail": "2FA code missing."}
+                )
+
+            if not token:
+                return QulfResponse(
+                    status_code=400, body={"detail": "Session token missing."}
+                )
+
+            result = await self.auth.validate_session(token)
+            if not result:
+                return QulfResponse(
+                    status_code=400, body={"detail": "Invalid or expired session."}
+                )
+            session, user = result
+
+            secret = None
+
+            if user.model_extra:
+                secret = user.model_extra.get("two_factor_secret")
+
+            if not secret:
+                return QulfResponse(status_code=400, body={"detail": "2FA not set up."})
+
+            is_valid = pyotp.TOTP(secret).verify(code)
+            if not is_valid:
+                return QulfResponse(
+                    status_code=400, body={"detail": "Invalid 2FA code."}
+                )
+
+            await self.auth.db.update_user(user.id, {"two_factor_enabled": True})
+
+            return QulfResponse(
+                status_code=200, body={"message": "2FA enabled successfully!"}
+            )
+
+        async def totp_verify_login(request: QulfRequest) -> QulfResponse:
+            temp_token = request.body.get("temp_token")
+            code = request.body.get("code")
+
+            if not code:
+                return QulfResponse(
+                    status_code=400, body={"detail": "2FA code missing."}
+                )
+
+            if not temp_token:
+                return QulfResponse(
+                    status_code=400, body={"detail": "Temporary Auth token missing."}
+                )
+
+            payload = None
+
+            try:
+                payload = jwt.decode(
+                    temp_token, self.auth.config.secret_key, algorithms=["HS256"]
+                )
+            except (ExpiredSignatureError, InvalidTokenError):
+                return QulfResponse(
+                    status_code=400, body={"detail": "Invalid or expired token"}
+                )
+
+            user = await self.auth.db.get_user_by_id(payload["sub"])
+
+            secret = None
+
+            if not user:
+                # Not supposed to reach, added just to tell the compiler user exists.
+                return QulfResponse(status_code=400, body={"detail": "User not found"})
+
+            if not user.model_extra:
+                # Not supposed to reach, added just to tell the compiler
+                # the users `two_factor_secret` exists.
+                return QulfResponse(status_code=400, body={"detail": "User not found"})
+
+            secret = user.model_extra.get("two_factor_secret")
+
+            if not secret:
+                return QulfResponse(
+                    status_code=400, body={"detail": "2FA is not set up for this user."}
+                )
+
+            is_valid = pyotp.TOTP(secret).verify(code)
+            if not is_valid:
+                return QulfResponse(
+                    status_code=400, body={"detail": "Invalid 2FA code."}
+                )
+
+            try:
+                session = await self.auth.create_session(
+                    user, request.ip_address, request.user_agent
+                )
+            except QulfException as e:
+                return QulfResponse(status_code=400, body={"detail": str(e)})
+
+            cookie = CookieOptions(
+                key=self.auth.config.cookies.name,
+                value=session.token,
+                httponly=self.auth.config.cookies.http_only,
+                secure=self.auth.config.cookies.secure,
+                samesite=self.auth.config.cookies.same_site,
+            )
+
+            return QulfResponse(
+                status_code=200,
+                set_cookies=[cookie],
+                body={"message": "Signed in successfully", "user": user.model_dump()},
+            )
+
+        return [
+            QulfRoute(path="/2fa/setup", methods=["POST"], handler=totp_setup),
+            QulfRoute(path="/2fa/enable", methods=["POST"], handler=totp_enable),
+            QulfRoute(
+                path="/2fa/verify_login", methods=["POST"], handler=totp_verify_login
+            ),
+        ]

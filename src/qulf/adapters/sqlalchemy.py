@@ -107,7 +107,9 @@ class AccountMixin:
 
 
 class DefaultAccount(QulfBase, AccountMixin):
-    """Default Account table schema ('qulf_account') used if no custom model is supplied."""
+    """
+    Default Account table schema ('qulf_account') used if no custom model is supplied.
+    """
 
     __tablename__ = "qulf_account"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -154,8 +156,7 @@ class SQLAlchemyAdapter(DatabaseAdapter):
 
     async def get_user_by_email(self, email: str) -> UserWithPassword | None:
         # We retrieve short-lived sessions directly inside database operations to
-        # make sure connections are checked back into the pool as fast as possible,
-        # avoiding connection starvation during long-running API operations.
+        # make sure connections are checked back into the pool as fast as possible
         async with self.session_maker() as session:
             stmt = select(self.user_model).where(self.user_model.email == email)
             result = await session.execute(stmt)
@@ -163,7 +164,7 @@ class SQLAlchemyAdapter(DatabaseAdapter):
             if not db_user:
                 return None
             # Enforcing from_attributes=True instructs Pydantic to read SQLAlchemy ORM
-            # properties as attributes (obj.field) rather than searching for dict keys.
+            # properties as attributes (obj.field)
             return UserWithPassword.model_validate(db_user, from_attributes=True)
 
     async def get_user_by_id(self, user_id: str | int) -> QulfUserType | None:
@@ -190,6 +191,35 @@ class SQLAlchemyAdapter(DatabaseAdapter):
             await session.commit()
             await session.refresh(new_user)
             return QulfUserType.model_validate(new_user, from_attributes=True)
+
+    async def update_user(
+        self, user_id: str | int, update_data: dict[str, Any]
+    ) -> QulfUserType:
+        """
+        Args:
+            user_id (str | int)
+            update_data (dict[str, Any]): **Trusted data!**
+
+        Raises:
+            ValueError: User not found
+
+        Returns:
+            User
+        """
+        async with self.session_maker() as session:
+            result = await session.execute(
+                select(self.user_model).where(self.user_model.id == user_id)
+            )
+            user = result.scalars().first()
+            if not user:
+                raise ValueError("User not found")
+
+            for field, value in update_data.items():
+                setattr(user, field, value)
+
+            await session.commit()
+            await session.refresh(user)
+            return QulfUserType.model_validate(user, from_attributes=True)
 
     async def create_session(
         self,

@@ -1,7 +1,10 @@
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from qulf.routing import QulfRoute
 from qulf.types import Session, User, UserCreate
+
+if TYPE_CHECKING:
+    from qulf.core import Qulf
 
 
 class QulfPlugin:
@@ -14,15 +17,17 @@ class QulfPlugin:
 
     name: str
 
-    def setup(self, auth: Any) -> None:
+    auth: "Qulf | None" = None
+
+    def setup(self, auth: "Qulf") -> None:
         """
         **Called when the plugin is initialized within the Qulf engine.**
 
-        Passing the `auth` instance gives the plugin access to the primary configuration
+        Gives the plugin access to the primary configuration
         and the shared database adapter,
         allowing the plugin to query database records safely.
         """
-        pass  # pragma: no cover
+        self.auth = auth
 
     def get_routes(self) -> list[QulfRoute]:
         """

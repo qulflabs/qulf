@@ -1,36 +1,28 @@
-from typing import TYPE_CHECKING
-
-from jwt import ExpiredSignatureError, InvalidTokenError
-
-from qulf.exceptions import QulfException
-from qulf.routing import CookieOptions
-
-if TYPE_CHECKING:
-    from qulf.core import Qulf
-
 from datetime import datetime, timedelta, timezone
 
 import jwt
 import pyotp
+from jwt import ExpiredSignatureError, InvalidTokenError
 
 from qulf import QulfRequest, QulfResponse, QulfRoute
-from qulf.exceptions import Requires2FAError
+from qulf.exceptions import QulfException, Requires2FAError
 from qulf.plugins import QulfPlugin
+from qulf.routing import CookieOptions
 from qulf.types import Session, User
 
 
 class TOTPPlugin(QulfPlugin):
     name = "totp"
-    auth: "Qulf"
-
-    def setup(self, auth):
-        self.auth = auth
 
     def get_custom_columns(self):
         return {"user": {"two_factor_enabled": bool, "two_factor_secret": str}}
 
     async def after_sign_in(self, user: User, session: Session) -> None:
-        if not user.model_extra or not user.model_extra.get("two_factor_enabled"):
+        if (
+            not self.auth
+            or not user.model_extra
+            or not user.model_extra.get("two_factor_enabled")
+        ):
             return
 
         await self.auth.db.delete_session(session.token)
@@ -73,7 +65,6 @@ class TOTPPlugin(QulfPlugin):
             )
             return QulfResponse(status_code=200, body={"uri": uri})
 
-        # pyrefly: ignore [bad-return]
         async def totp_enable(request: QulfRequest) -> QulfResponse:
             token = request.cookies.get(self.auth.config.cookies.name)
             code = request.body.get("code")

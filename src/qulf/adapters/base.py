@@ -1,7 +1,15 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
+from typing import Any
 
-from qulf.types import Account, AccountCreate, Session, User, UserCreate, UserWithPassword
+from qulf.types import (
+    Account,
+    AccountCreate,
+    Session,
+    User,
+    UserCreate,
+    UserWithPassword,
+)
 
 
 class DatabaseAdapter(ABC):
@@ -27,7 +35,15 @@ class DatabaseAdapter(ABC):
         pass  # pragma: no cover
 
     @abstractmethod
-    async def create_user(self, user_data: UserCreate, hashed_password: str) -> User:
+    async def create_user(
+        self, user_data: UserCreate, hashed_password: str
+    ) -> User:
+        pass  # pragma: no cover
+
+    @abstractmethod
+    async def update_user(
+        self, user_id: str | int, update_data: dict[str, Any]
+    ) -> User:
         pass  # pragma: no cover
 
     @abstractmethod

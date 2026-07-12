@@ -12,11 +12,11 @@ from qulf.types import AccountCreate, UserCreate
 class OAuthPlugin(QulfPlugin):
     name = "oauth"
 
-    def __init__(self):
-        self.auth = None
+    # def __init__(self):
+    #     self.auth = None
 
-    def setup(self, auth: Any) -> None:
-        self.auth = auth
+    # def setup(self, auth: Any) -> None:
+    #     self.auth = auth
 
     def get_routes(self) -> list[QulfRoute]:
         if not self.auth:

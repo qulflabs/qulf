@@ -36,9 +36,6 @@ class MagicLinkPlugin(QulfPlugin):
         self.expires_in_minutes = expires_in_minutes
         self.auth = None
 
-    def setup(self, auth: Any) -> None:
-        self.auth = auth
-
     async def generate_and_send(self, email: str) -> None:
         """
         **Generates a stateless JWT token and passes it

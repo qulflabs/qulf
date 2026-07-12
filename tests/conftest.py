@@ -8,7 +8,14 @@ from qulf.adapters.base import DatabaseAdapter
 from qulf.adapters.sqlalchemy import QulfBase, SQLAlchemyAdapter
 from qulf.config import QulfConfig
 from qulf.core import Qulf
-from qulf.types import Account, AccountCreate, Session, User, UserCreate, UserWithPassword
+from qulf.types import (
+    Account,
+    AccountCreate,
+    Session,
+    User,
+    UserCreate,
+    UserWithPassword,
+)
 
 
 class MemoryAdapter(DatabaseAdapter):
@@ -41,6 +48,18 @@ class MemoryAdapter(DatabaseAdapter):
         )
         self.users[new_id] = new_user
         return User.model_validate(new_user, from_attributes=True)
+
+    async def update_user(self, user_id: str | int, update_data: dict) -> User:
+
+        user = self.users.get(str(user_id))
+        if not user:
+            raise ValueError("User not found")
+
+        for key, value in update_data.items():
+            # Because we set extra="allow" on CoreModel, we can just use setattr
+            setattr(user, key, value)
+
+        return User.model_validate(user, from_attributes=True)
 
     async def create_session(
         self, user_id, token, expires_at, ip_address=None, user_agent=None

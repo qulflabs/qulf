@@ -76,10 +76,10 @@ class DefaultUser(QulfBase, UserMixin):
 
 
 class DefaultSession(QulfBase, SessionMixin):
-    """Default Session table schema ('qulf_session')
+    """Default Session table schema ('session')
     used if no custom model is supplied."""
 
-    __tablename__ = "qulf_session"
+    __tablename__ = "session"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"))
 
@@ -108,10 +108,10 @@ class AccountMixin:
 
 class DefaultAccount(QulfBase, AccountMixin):
     """
-    Default Account table schema ('qulf_account') used if no custom model is supplied.
+    Default Account table schema ('account') used if no custom model is supplied.
     """
 
-    __tablename__ = "qulf_account"
+    __tablename__ = "account"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"))
 
@@ -252,11 +252,68 @@ class SQLAlchemyAdapter(DatabaseAdapter):
                 return None
             return QulfSessionType.model_validate(db_session, from_attributes=True)
 
-    async def delete_session(self, token: str) -> None:
+    async def delete_session(self, token: str) -> bool:
         async with self.session_maker() as session:
-            stmt = delete(self.session_model).where(self.session_model.token == token)
-            await session.execute(stmt)
+            stmt = (
+                delete(self.session_model)
+                .where(self.session_model.token == token)
+                .returning(self.session_model.id)
+            )
+            result = await session.execute(stmt)
             await session.commit()
+            deleted_id = result.scalar()
+
+            return deleted_id is not None
+
+    async def get_user_sessions(self, user_id: str | int) -> list[QulfSessionType]:
+        async with self.session_maker() as session:
+            stmt = select(self.session_model).where(
+                self.session_model.user_id == user_id
+            )
+            result = await session.execute(stmt)
+            db_session = result.scalars().all()
+            return [
+                QulfSessionType.model_validate(db_s, from_attributes=True)
+                for db_s in db_session
+            ]
+
+    async def delete_user_session(
+        self, user_id: str | int, token: str | None = None
+    ) -> bool:
+        async with self.session_maker() as session:
+            stmt = (
+                delete(self.session_model)
+                .where(
+                    self.session_model.user_id == user_id,
+                    self.session_model.token == token,
+                )
+                .returning(self.session_model.id)
+            )
+            result = await session.execute(stmt)
+            await session.commit()
+            deleted_id = result.scalar()
+
+            return deleted_id is not None
+
+    async def delete_all_user_sessions(
+        self, user_id: str | int, except_token: str | None = None
+    ) -> list[str]:
+        async with self.session_maker() as session:
+            stmt = delete(self.session_model).where(
+                self.session_model.user_id == user_id
+            )
+
+            if except_token is not None:
+                stmt = stmt.where(self.session_model.token != except_token)
+
+            stmt = stmt.returning(self.session_model.token)
+
+            result = await session.execute(stmt)
+            await session.commit()
+
+            deleted_tokens = list(result.scalars().all())
+
+            return deleted_tokens
 
     async def create_account(self, account_data: AccountCreate) -> QulfAccountType:
         async with self.session_maker() as session:

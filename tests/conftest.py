@@ -80,8 +80,33 @@ class MemoryAdapter(DatabaseAdapter):
     async def get_session(self, token: str) -> Session | None:
         return self.sessions.get(token)
 
-    async def delete_session(self, token: str) -> None:
-        self.sessions.pop(token, None)
+    async def delete_session(self, token: str) -> bool:
+        session = self.sessions.pop(token, False)
+        return bool(session)
+
+    async def get_user_sessions(self, user_id: str | int) -> list[Session]:
+        return [s for s in self.sessions.values() if str(s.user_id) == str(user_id)]
+
+    async def delete_user_session(
+        self, user_id: str | int, token: str | None = None
+    ) -> bool:
+        if token and token in self.sessions:
+            if str(self.sessions[token].user_id) == str(user_id):
+                self.sessions.pop(token)
+                return True
+        return False
+
+    async def delete_all_user_sessions(
+        self, user_id: str | int, except_token: str | None = None
+    ) -> list[str]:
+        tokens_to_delete = [
+            t
+            for t, s in self.sessions.items()
+            if str(s.user_id) == str(user_id) and t != except_token
+        ]
+        for t in tokens_to_delete:
+            self.sessions.pop(t)
+        return tokens_to_delete
 
     async def create_account(self, account_data: AccountCreate) -> Account:
         new_id = str(self._id_counter)

@@ -1,6 +1,5 @@
 import secrets
 from datetime import datetime, timedelta, timezone
-from typing import Any
 
 from qulf.crypto import hash_password
 from qulf.exceptions import QulfException
@@ -12,19 +11,12 @@ from qulf.types import AccountCreate, UserCreate
 class OAuthPlugin(QulfPlugin):
     name = "oauth"
 
-    # def __init__(self):
-    #     self.auth = None
-
-    # def setup(self, auth: Any) -> None:
-    #     self.auth = auth
-
     def get_routes(self) -> list[QulfRoute]:
         if not self.auth:
             return []
 
         async def login(request: QulfRequest) -> QulfResponse:
             provider_id = request.path_params.get("provider")
-
             provider = next(
                 (p for p in self.auth.config.oauth_providers if p.id == provider_id),
                 None,

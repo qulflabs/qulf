@@ -34,7 +34,6 @@ class MagicLinkPlugin(QulfPlugin):
     ):
         self.send_email_func = send_email_func
         self.expires_in_minutes = expires_in_minutes
-        self.auth = None
 
     async def generate_and_send(self, email: str) -> None:
         """

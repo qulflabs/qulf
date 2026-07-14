@@ -76,6 +76,10 @@ description = "Format code and styles"
 dir = "web"
 run = "pnpm format"
 
+[tasks.release]
+description = "Create a new release"
+run = "uv run cz bump"
 
 [settings.npm]
 package_manager = "pnpm"
+

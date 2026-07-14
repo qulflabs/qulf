@@ -211,3 +211,29 @@ async def test_jwt_session_strategy(memory_db):
     expired_token = jwt.encode(expired_payload, config.secret_key, algorithm="HS256")
 
     assert await auth.validate_session(expired_token) is None
+
+    @pytest.mark.asyncio
+    async def test_get_session_from_cookies(memory_db):
+        auth = Qulf(db=memory_db)
+        await auth.sign_up(
+            UserCreate(
+                name="Cookie User",
+                email="cookie@test.com",
+                username="cookie_monster",
+                password="p",
+                password_confirmation="p",
+            )
+        )
+        session = await auth.sign_in("cookie@test.com", "p")
+        
+        # Test Valid Cookie
+        cookies = {auth.config.cookies.name: session.token}
+        result = await auth.get_session_from_cookies(cookies)
+        assert result is not None
+        assert result[1].email == "cookie@test.com"
+        
+        # Test Missing Cookie
+        assert await auth.get_session_from_cookies({}) is None
+        
+        # Test Invalid Cookie
+        assert await auth.get_session_from_cookies({auth.config.cookies.name: "fake"}) is None

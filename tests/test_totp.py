@@ -101,11 +101,11 @@ async def test_totp_bad_flows(totp_app):
     # Try setting up without a session
     client.cookies.delete("qulf_session")
     res_setup = client.post("/2fa/setup")
-    assert res_setup.status_code == 400
+    assert res_setup.status_code == 401
 
     # Try verifying with bad temp_token
     res_verify = client.post(
         "/2fa/verify_login", json={"temp_token": "garbage", "code": "123456"}
     )
-    assert res_verify.status_code == 400
+    assert res_verify.status_code == 401
     assert "Invalid or expired token" in res_verify.json()["detail"]

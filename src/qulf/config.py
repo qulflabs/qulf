@@ -23,7 +23,13 @@ class QulfConfig(BaseSettings):
     project_name: str = "Qulf"
     base_url: str = "http://localhost:8000"
     # Requires a 32+ character string for security!
-    secret_key: str = Field(..., min_length=32)
+    secret_key: str = Field(
+        ...,
+        min_length=32,
+        description="""
+    MISSING QULF_SECRET_KEY: Secret used to sign JWTs and other cryptographic tokens.
+        """,
+    )
 
     cookies: CookieConfig = CookieConfig()
     sessions: SessionConfig = SessionConfig()

@@ -189,6 +189,19 @@ class Qulf:
             return None
 
         return (session, user)
+    
+    async def get_session_from_cookies(
+        self, cookies: dict[str, str]
+    ) -> tuple[Session, User] | None:
+        """
+        Extracts the session token from a dictionary of cookies and validates it.
+        Returns the (Session, User) tuple if valid, or None if missing/invalid.
+        """
+        token = cookies.get(self.config.cookies.name)
+        if not token:
+            return None
+        return await self.validate_session(token)
+
 
     async def sign_out(self, token: str) -> None:
         """

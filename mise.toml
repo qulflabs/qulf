@@ -5,7 +5,7 @@ node = "24"
 pnpm = "latest"
 
 [env]
-PYTHONPATH = "./"
+PYTHONPATH = "./src"
 TEST_ENV = "true"
 _.file = ".env"
 

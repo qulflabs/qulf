@@ -10,7 +10,7 @@ from qulf.exceptions import (
     UserAlreadyExistsError,
     UserNotFoundError,
 )
-from qulf.plugins.base import QulfPlugin
+from qulf.plugins import QulfPlugin
 from qulf.types import Session, User, UserCreate
 
 
@@ -29,7 +29,8 @@ class Qulf:
         plugins: list[QulfPlugin] | None = None,
     ):
         self.db = db
-        self.config = config or QulfConfig()
+
+        self.config = config or QulfConfig()  # type: ignore - We want it to throw if QULF_SECRET_KEY isn't found
         self.plugins: dict[str, QulfPlugin] = {}
 
         aggregated_columns: dict[str, dict[str, type]] = {}
@@ -139,7 +140,9 @@ class Qulf:
         return session
 
     async def validate_session(self, token: str) -> tuple[Session, User] | None:
-        """Validates a session token. If strategy is 'jwt', it validates statelessly."""
+        """
+        Validates a session token. If strategy is 'jwt', it validates statelessly.
+        """
 
         # STATELESS JWT VALIDATION
         if self.config.sessions.strategy == "jwt":
@@ -208,3 +211,19 @@ class Qulf:
         Terminates the session by deleting the token from storage.
         """
         await self.db.delete_session(token=token)
+
+    async def get_user_sessions(self, user_id: str | int) -> list[Session]:
+        """Fetch all active sessions for a given user."""
+        return await self.db.get_user_sessions(user_id=user_id)
+
+    async def revoke_session(self, user_id: str | int, token: str) -> bool:
+        """Revoke a specific session for a user."""
+        return await self.db.delete_user_session(user_id=user_id, token=token)
+
+    async def revoke_all_user_sessions(
+        self, user_id: str | int, except_token: str | None = None
+    ) -> list[str]:
+        """Revoke all sessions for a user, optionally keeping the current one alive."""
+        return await self.db.delete_all_user_sessions(
+            user_id=user_id, except_token=except_token
+        )

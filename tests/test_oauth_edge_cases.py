@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 from qulf.config import QulfConfig
 from qulf.core import Qulf
-from qulf.exceptions import QulfException
+from qulf.exceptions import ConfigurationError, QulfException
 from qulf.frameworks.fastapi import serve_qulf
 from qulf.plugins.oauth import OAuthPlugin
 from qulf.providers.base import BaseOAuthProvider, OAuthTokenResponse, OAuthUserProfile
@@ -30,9 +30,8 @@ class ErrorProneProvider(BaseOAuthProvider):
 
 
 def test_oauth_plugin_uninitialized():
-    """Test that the plugin returns empty routes if not setup by Qulf."""
-    assert OAuthPlugin().get_routes() == []
-
+    with pytest.raises(ConfigurationError):
+        OAuthPlugin().get_routes()
 
 def test_oauth_routing_edge_cases():
     """Test the 404 and 400 error branches using TestClient."""
@@ -45,8 +44,7 @@ def test_oauth_routing_edge_cases():
     )
 
     auth = Qulf(
-        # pyrefly: ignore [bad-argument-type]
-        db=None,
+        db=None, # type: ignore
         config=config,
         plugins=[OAuthPlugin()],
     )  # DB not needed for these checks

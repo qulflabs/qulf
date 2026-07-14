@@ -43,18 +43,11 @@ class TOTPPlugin(QulfPlugin):
             return []
 
         async def totp_setup(request: QulfRequest) -> QulfResponse:
-            token = request.cookies.get(self.auth.config.cookies.name)
-            if not token:
-                return QulfResponse(
-                    status_code=400, body={"detail": "Session token missing."}
-                )
+            session_data = await self.auth.get_session_from_cookies(request.cookies)
+            if not session_data:
+                return QulfResponse(status_code=401, body={"detail": "Unauthorized"})
 
-            result = await self.auth.validate_session(token)
-            if not result:
-                return QulfResponse(
-                    status_code=400, body={"detail": "Invalid or expired session."}
-                )
-            session, user = result
+            session, user = session_data
 
             secret = pyotp.random_base32()
 
@@ -66,24 +59,22 @@ class TOTPPlugin(QulfPlugin):
             return QulfResponse(status_code=200, body={"uri": uri})
 
         async def totp_enable(request: QulfRequest) -> QulfResponse:
-            token = request.cookies.get(self.auth.config.cookies.name)
+            session_data = await self.auth.get_session_from_cookies(request.cookies)
+            if not session_data:
+                return QulfResponse(status_code=401, body={"detail": "Unauthorized"})
+
+            session, user = session_data
+
             code = request.body.get("code")
             if not code:
                 return QulfResponse(
                     status_code=400, body={"detail": "2FA code missing."}
                 )
 
-            if not token:
-                return QulfResponse(
-                    status_code=400, body={"detail": "Session token missing."}
-                )
-
-            result = await self.auth.validate_session(token)
-            if not result:
+            if not session:
                 return QulfResponse(
                     status_code=400, body={"detail": "Invalid or expired session."}
                 )
-            session, user = result
 
             secret = None
 
@@ -96,7 +87,7 @@ class TOTPPlugin(QulfPlugin):
             is_valid = pyotp.TOTP(secret).verify(code)
             if not is_valid:
                 return QulfResponse(
-                    status_code=400, body={"detail": "Invalid 2FA code."}
+                    status_code=401, body={"detail": "Invalid 2FA code."}
                 )
 
             await self.auth.db.update_user(user.id, {"two_factor_enabled": True})
@@ -127,7 +118,7 @@ class TOTPPlugin(QulfPlugin):
                 )
             except (ExpiredSignatureError, InvalidTokenError):
                 return QulfResponse(
-                    status_code=400, body={"detail": "Invalid or expired token"}
+                    status_code=401, body={"detail": "Invalid or expired token"}
                 )
 
             user = await self.auth.db.get_user_by_id(payload["sub"])
@@ -135,25 +126,24 @@ class TOTPPlugin(QulfPlugin):
             secret = None
 
             if not user:
-                # Not supposed to reach, added just to tell the compiler user exists.
                 return QulfResponse(status_code=400, body={"detail": "User not found"})
 
             if not user.model_extra:
                 # Not supposed to reach, added just to tell the compiler
                 # the users `two_factor_secret` exists.
-                return QulfResponse(status_code=400, body={"detail": "User not found"})
+                return QulfResponse(status_code=401, body={"detail": "User not found"})
 
             secret = user.model_extra.get("two_factor_secret")
 
             if not secret:
                 return QulfResponse(
-                    status_code=400, body={"detail": "2FA is not set up for this user."}
+                    status_code=401, body={"detail": "2FA is not set up for this user."}
                 )
 
             is_valid = pyotp.TOTP(secret).verify(code)
             if not is_valid:
                 return QulfResponse(
-                    status_code=400, body={"detail": "Invalid 2FA code."}
+                    status_code=401, body={"detail": "Invalid 2FA code."}
                 )
 
             try:

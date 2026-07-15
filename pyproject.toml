@@ -36,6 +36,7 @@ target-version = "py310"
 select = ["E", "F", "I", "UP"]
 
 [tool.mypy]
+plugins = ["pydantic.mypy"]
 strict = true
 python_version = "3.14"
 

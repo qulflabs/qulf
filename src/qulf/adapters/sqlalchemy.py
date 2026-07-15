@@ -299,14 +299,14 @@ class SQLAlchemyAdapter(DatabaseAdapter):
         self, user_id: str | int, except_token: str | None = None
     ) -> list[str]:
         async with self.session_maker() as session:
-            stmt = delete(self.session_model).where(
+            delete_stmt = delete(self.session_model).where(
                 self.session_model.user_id == user_id
             )
 
             if except_token is not None:
-                stmt = stmt.where(self.session_model.token != except_token)
+                where_stmt = delete_stmt.where(self.session_model.token != except_token)
 
-            stmt = stmt.returning(self.session_model.token)
+            stmt = where_stmt.returning(self.session_model.token)
 
             result = await session.execute(stmt)
             await session.commit()

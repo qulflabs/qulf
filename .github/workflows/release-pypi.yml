@@ -1,16 +1,15 @@
-name: Release to PyPI
+name: Release
 
 on:
   push:
     tags:
       - "v*"
-    branches: 
+    branches:
       - main
   pull_request:
     branches:
       - main
   workflow_dispatch:
-
 permissions:
   id-token: write
   contents: write
@@ -21,8 +20,7 @@ jobs:
       !contains(github.ref_name, 'a') &&
       !contains(github.ref_name, 'b') &&
       !contains(github.ref_name, 'rc')
-
-    name: Publish to PyPI
+    name: Build, Publish & Release
     runs-on: ubuntu-latest
 
     environment:
@@ -44,7 +42,7 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Set up Python
+      - name: Set up Python 3.10
         run: uv python install 3.10
 
       - name: Sync dependencies
@@ -53,13 +51,12 @@ jobs:
       - name: Build package
         run: uv build
 
-      - name: Publish package to PyPI
+      - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          prerelease: false
           files: |
             dist/*

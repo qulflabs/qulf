@@ -63,7 +63,7 @@ jobs:
 
       - name: Run Pytest
         env:
-          SECRET_KEY: "secret_key_that_is_32_characters_or_more"
+          QULF_SECRET_KEY: "secret_key_that_is_32_characters_or_more"
         run: |
           uv run pytest tests/ \
             -v \

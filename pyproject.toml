@@ -1,6 +1,6 @@
 [project]
 name = "qulf"
-version = "0.1.0a1"
+version = "0.1.0b1"
 description = "A framework and ORM agnostic, plugin-driven authentication library for Python."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -36,6 +36,7 @@ target-version = "py310"
 select = ["E", "F", "I", "UP"]
 
 [tool.mypy]
+plugins = ["pydantic.mypy"]
 strict = true
 python_version = "3.14"
 
@@ -43,12 +44,15 @@ python_version = "3.14"
 asyncio_mode = "auto"
 testpaths = ["tests"]
 
-[tool.pyrefly]
-python-version = "3.14.0"
-preset = "legacy"
 
 [dependency-groups]
-dev = ["aiosqlite>=0.22.1", "httpx>=0.28.1", "respx>=0.23.1"]
+dev = [
+    "aiosqlite>=0.22.1",
+    "commitizen>=4.16.4",
+    "httpx>=0.28.1",
+    "pre-commit>=4.6.0",
+    "respx>=0.23.1",
+]
 
 [build-system]
 requires = ["uv_build >= 0.11.7, <0.12.0"]
@@ -57,5 +61,17 @@ build-backend = "uv_build"
 classifiers = ["Library :: Python :: 3", "Operating System :: OS Independent"]
 
 [project.urls]
-Homepage = "https://github.com/pitachro/qulf"
-Issues = "https://github.com/pitachro/qulf/issues"
+Homepage = "https://github.com/qulflabs/qulf"
+Issues = "https://github.com/qulflabs/qulf/issues"
+
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version_provider = "pep621"
+version_scheme = "pep440"
+version_files = [
+    "pyproject.toml:version",
+]
+tag_format = "v$version"
+update_changelog_on_bump = true
+major_version_zero = true

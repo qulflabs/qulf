@@ -33,6 +33,7 @@ def test_oauth_plugin_uninitialized():
     with pytest.raises(ConfigurationError):
         OAuthPlugin().get_routes()
 
+
 def test_oauth_routing_edge_cases():
     """Test the 404 and 400 error branches using TestClient."""
     provider = ErrorProneProvider(
@@ -44,7 +45,7 @@ def test_oauth_routing_edge_cases():
     )
 
     auth = Qulf(
-        db=None, # type: ignore
+        db=None,  # type: ignore
         config=config,
         plugins=[OAuthPlugin()],
     )  # DB not needed for these checks
@@ -91,7 +92,7 @@ async def test_oauth_db_integrity_error(sqlite_adapter):
 
     auth = Qulf(db=sqlite_adapter, config=config, plugins=[OAuthPlugin()])
 
-    # Manually inject an orphaned account into the database 
+    # Manually inject an orphaned account into the database
     # (User ID 99999 does not exist)
     await sqlite_adapter.create_account(
         AccountCreate(user_id=99999, account_id="999", provider_id="error_provider")

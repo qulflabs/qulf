@@ -3,6 +3,7 @@
         "bento",
         "passwordless",
         "Qulf",
+        "statelessly",
         "totp"
     ],
     "biome.enabled": true,
@@ -22,4 +23,11 @@
     "search.exclude": {
         "**/.venv": true
     },
+    "files.watcherExclude": {
+        "**/.git/objects/**": true,
+        "**/.git/subtree-cache/**": true,
+        "**/node_modules/**": true,
+        "**/target/**": true
+    },
+    "python.analysis.autoImportCompletions": true
 }

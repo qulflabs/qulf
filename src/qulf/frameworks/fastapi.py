@@ -1,10 +1,17 @@
+from collections.abc import Awaitable, Callable, Coroutine
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Request, Response
 
 from qulf.core import Qulf
 from qulf.exceptions import QulfException
 from qulf.frameworks.base import SignInRequest
-from qulf.routing import QulfRequest
+from qulf.routing import QulfRequest, QulfResponse
 from qulf.types import User, UserCreate
+
+Handler = Callable[[QulfRequest], Awaitable[QulfResponse]]
+
+Endpoint = Callable[[Request, Response], Coroutine[Any, Any, dict[str, Any] | None]]
 
 
 def serve_qulf(auth: Qulf) -> APIRouter:
@@ -48,7 +55,7 @@ def serve_qulf(auth: Qulf) -> APIRouter:
         return {"message": "Signed in successfully"}
 
     @router.post("/sign-out")
-    async def sign_out(request: Request, response: Response) -> dict[str, str]:
+    async def sign_out(request: Request, response: Response) -> dict[str, Any]:
         token = request.cookies.get(auth.config.cookies.name)
         if token:
             await auth.sign_out(token)
@@ -59,8 +66,10 @@ def serve_qulf(auth: Qulf) -> APIRouter:
     for plugin in auth.plugins.values():
         for qulf_route in plugin.get_routes():
 
-            def make_endpoint(handler):
-                async def dynamic_endpoint(request: Request, response: Response):
+            def make_endpoint(handler: Handler) -> Endpoint:
+                async def dynamic_endpoint(
+                    request: Request, response: Response
+                ) -> dict[str, Any] | None:
                     body = {}
                     if request.method in ["POST", "PUT", "PATCH"]:
                         try:

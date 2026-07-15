@@ -112,6 +112,7 @@ async def test_google_provider_authorization_url() -> None:
     assert "scope=openid+email+profile" in url
     assert "access_type=offline" in url
 
+
 # GITHUB HTTP TESTS
 @respx.mock
 @pytest.mark.asyncio

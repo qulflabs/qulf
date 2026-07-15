@@ -2,12 +2,12 @@ from urllib.parse import urlencode
 
 import httpx
 
+from qulf.exceptions import QulfException
 from qulf.providers.base import (
     BaseOAuthProvider,
     OAuthTokenResponse,
     OAuthUserProfile,
 )
-from qulf.exceptions import QulfException
 
 
 class GitHubProvider(BaseOAuthProvider):
@@ -49,7 +49,9 @@ class GitHubProvider(BaseOAuthProvider):
 
             result = response.json()
             if "error" in result:
-                raise QulfException(f"GitHub OAuth error: {result['error_description']}")
+                raise QulfException(
+                    f"GitHub OAuth error: {result['error_description']}"
+                )
 
             return OAuthTokenResponse(
                 access_token=result["access_token"],
@@ -72,16 +74,26 @@ class GitHubProvider(BaseOAuthProvider):
                 raise QulfException(f"Failed to fetch user profile: {response.text}")
 
             user_data = response.json()
-            
+
             # Fetch user emails if necessary
             email = user_data.get("email")
             if not email:
-                emails_response = await client.get(self.USERINFO_EMAILS_URL, headers=headers)
+                emails_response = await client.get(
+                    self.USERINFO_EMAILS_URL, headers=headers
+                )
                 if emails_response.status_code == 200:
                     emails = emails_response.json()
-                    primary_email = next((e["email"] for e in emails if e["primary"]), None)
-                    verified_email = next((e["email"] for e in emails if e["verified"]), None)
-                    email = primary_email or verified_email or (emails[0]["email"] if emails else None)
+                    primary_email = next(
+                        (e["email"] for e in emails if e["primary"]), None
+                    )
+                    verified_email = next(
+                        (e["email"] for e in emails if e["verified"]), None
+                    )
+                    email = (
+                        primary_email
+                        or verified_email
+                        or (emails[0]["email"] if emails else None)
+                    )
 
             if not email:
                 raise QulfException("Could not obtain email from GitHub")

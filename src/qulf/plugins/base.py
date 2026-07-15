@@ -28,12 +28,12 @@ class QulfPlugin:
                 f"Plugin {self.name} has not been initialized by Qulf."
             )
         return self._auth
-    
+
     @auth.setter
     def auth(self, value: "Qulf") -> None:
         """Allow assignment during setup()."""
         self._auth = value
-        
+
     def setup(self, auth: "Qulf") -> None:
         """
         **Called when the plugin is initialized within the Qulf engine.**

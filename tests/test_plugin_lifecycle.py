@@ -64,7 +64,7 @@ async def test_plugin_lifecycle_hooks(memory_db):
     assert "after_user_create_fired_for_good@test.com" in mock_plugin.events
 
     # 2. Test Sign In (After Hook)
-    session = await auth.sign_in("good@test.com", "password")
+    _session = await auth.sign_in("good@test.com", "password")
     assert "before_sign_in_fired" in mock_plugin.events
     assert "after_sign_in_fired" in mock_plugin.events
 

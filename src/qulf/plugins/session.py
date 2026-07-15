@@ -34,7 +34,8 @@ class SessionManagementPlugin(QulfPlugin):
             # Fetch sessions
             sessions = await self.auth.get_user_sessions(user.id)
 
-            # Sanitize the sessions using Pydantic V2 model_dump to strip the secret token
+            # Sanitize the sessions using
+            # Pydantic V2 model_dump to strip the secret token
             sanitized_sessions = [s.model_dump(exclude={"token"}) for s in sessions]
 
             return QulfResponse(status_code=200, body={"sessions": sanitized_sessions})

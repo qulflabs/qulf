@@ -1,7 +1,6 @@
 import secrets
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
-from typing import Any
 
 import jwt
 
@@ -77,21 +76,26 @@ class MagicLinkPlugin(QulfPlugin):
         except jwt.InvalidTokenError:
             raise InvalidTokenError("Invalid magic link")
 
-        user = await self.auth.db.get_user_by_email(email)
+        _user = await self.auth.db.get_user_by_email(email)
+
+        user = await self.auth.db.get_user_by_id(_user.id) if _user else None
+
         if not user:
             # If a user joins using a magic link, we automatically onboard them.
             # We generate a strong, secure random password so the
             # account satisfies the DB structure requirements and remains secure
             # until they choose to associate a standard credential with their profile.
             random_pass = secrets.token_urlsafe(32)
-            user_data = UserCreate(
+            create_user = UserCreate(
                 email=email,
                 name=email.split("@")[0],
                 username=email.split("@")[0],
                 password=random_pass,
                 password_confirmation=random_pass,
             )
-            user = await self.auth.db.create_user(user_data, hash_password(random_pass))
+            user = await self.auth.db.create_user(
+                create_user, hash_password(random_pass)
+            )
 
         session = await self.auth.create_session(user, ip_address, user_agent)
 

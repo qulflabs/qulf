@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import jwt
 import pyotp
@@ -14,7 +15,7 @@ from qulf.types import Session, User
 class TOTPPlugin(QulfPlugin):
     name = "totp"
 
-    def get_custom_columns(self):
+    def get_custom_columns(self) -> dict[str, dict[str, Any]]:
         return {"user": {"two_factor_enabled": bool, "two_factor_secret": str}}
 
     async def after_sign_in(self, user: User, session: Session) -> None:
@@ -35,7 +36,8 @@ class TOTPPlugin(QulfPlugin):
         }
         temp_token = jwt.encode(payload, self.auth.config.secret_key)
 
-        # 4. Raise the error to stop the HTTP response and pass the token to the frontend
+        # 4. Raise the error to stop the
+        # HTTP response and pass the token to the frontend
         raise Requires2FAError(temp_token)
 
     def get_routes(self) -> list[QulfRoute]:

@@ -62,6 +62,8 @@ jobs:
         run: uv sync --extra test
 
       - name: Run Pytest
+        env:
+          SECRET_KEY: "secret_key_that_is_32_characters_or_more"
         run: |
           uv run pytest tests/ \
             -v \

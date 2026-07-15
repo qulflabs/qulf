@@ -47,7 +47,7 @@ async def test_session_management_routes(memory_db):
 
     session1 = await auth.create_session(user, ip_address="192.168.1.1")
     session2 = await auth.create_session(user, ip_address="192.168.1.2")
-    session3 = await auth.create_session(user, ip_address="192.168.1.3")
+    _session3 = await auth.create_session(user, ip_address="192.168.1.3")
 
     # ==========================================
     # ROUTE: GET /session/list

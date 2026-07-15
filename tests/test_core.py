@@ -225,15 +225,18 @@ async def test_jwt_session_strategy(memory_db):
             )
         )
         session = await auth.sign_in("cookie@test.com", "p")
-        
+
         # Test Valid Cookie
         cookies = {auth.config.cookies.name: session.token}
         result = await auth.get_session_from_cookies(cookies)
         assert result is not None
         assert result[1].email == "cookie@test.com"
-        
+
         # Test Missing Cookie
         assert await auth.get_session_from_cookies({}) is None
-        
+
         # Test Invalid Cookie
-        assert await auth.get_session_from_cookies({auth.config.cookies.name: "fake"}) is None
+        assert (
+            await auth.get_session_from_cookies({auth.config.cookies.name: "fake"})
+            is None
+        )

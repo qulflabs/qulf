@@ -30,7 +30,7 @@ class Qulf:
     ):
         self.db = db
 
-        self.config = config or QulfConfig()  # type: ignore - We want it to throw if QULF_SECRET_KEY isn't found
+        self.config = config or QulfConfig()
         self.plugins: dict[str, QulfPlugin] = {}
 
         aggregated_columns: dict[str, dict[str, type]] = {}
@@ -174,12 +174,12 @@ class Qulf:
                 return None
 
         # STATEFUL DATABASE VALIDATION
-        session = await self.db.get_session(token=token)
-        if not session:
+        db_session = await self.db.get_session(token=token)
+        if not db_session:
             return None
 
         # Fix naive datetimes from SQLite
-        expires_at = session.expires_at
+        expires_at = db_session.expires_at
         if expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=timezone.utc)
 
@@ -187,12 +187,12 @@ class Qulf:
             await self.db.delete_session(token=token)
             return None
 
-        user = await self.db.get_user_by_id(session.user_id)
-        if not user:
+        db_user = await self.db.get_user_by_id(db_session.user_id)
+        if not db_user:
             return None
 
-        return (session, user)
-    
+        return (db_session, db_user)
+
     async def get_session_from_cookies(
         self, cookies: dict[str, str]
     ) -> tuple[Session, User] | None:
@@ -204,7 +204,6 @@ class Qulf:
         if not token:
             return None
         return await self.validate_session(token)
-
 
     async def sign_out(self, token: str) -> None:
         """

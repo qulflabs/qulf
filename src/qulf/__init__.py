@@ -9,8 +9,6 @@ try:
 except PackageNotFoundError:
     __version__ = "unknown"
 
-from .core import Qulf
-
 __all__ = [
     "Qulf",
     "QulfConfig",

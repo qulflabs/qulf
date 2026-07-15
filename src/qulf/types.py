@@ -7,6 +7,7 @@ class CoreModel(BaseModel):
     """
     Common base schema for all Qulf entities containing tracking properties.
     """
+
     model_config = ConfigDict(extra="allow")
 
     id: int | str

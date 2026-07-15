@@ -76,24 +76,62 @@ description = "Format code and styles"
 dir = "web"
 run = "pnpm format"
 
-[tasks.bump]
-description = "Create a stable release commit and tag"
-run = "uv run cz bump"
+[tasks.check-release]
+description = "Validate repository state before creating a release"
+run = '''
+BRANCH="$(git symbolic-ref --short HEAD 2>/dev/null || true)"
+
+if [ "$BRANCH" != "main" ]; then
+    echo "❌ Releases can only be created from the main branch."
+    echo "Current branch: ${BRANCH:-detached HEAD}"
+    exit 1
+fi
+
+if ! git diff --quiet; then
+    echo "❌ Working tree contains unstaged changes."
+    exit 1
+fi
+
+if ! git diff --cached --quiet; then
+    echo "❌ Working tree contains staged but uncommitted changes."
+    exit 1
+fi
+
+if [ -n "$(git ls-files --others --exclude-standard)" ]; then
+    echo "❌ Repository contains untracked files."
+    exit 1
+fi
+
+echo "✅ Repository is ready for release."
+'''
+
+[tasks."bump:patch"]
+depends = ["check-release"]
+run = "uv run cz bump --increment PATCH"
+
+[tasks."bump:minor"]
+depends = ["check-release"]
+run = "uv run cz bump --increment MINOR"
+
+[tasks."bump:major"]
+depends = ["check-release"]
+run = "uv run cz bump --increment MAJOR"
 
 [tasks."bump:alpha"]
-description = "Create an alpha release commit and tag"
+depends = ["check-release"]
 run = "uv run cz bump --prerelease alpha"
 
 [tasks."bump:beta"]
-description = "Create a beta release commit and tag"
+depends = ["check-release"]
 run = "uv run cz bump --prerelease beta"
 
 [tasks."bump:rc"]
-description = "Create a release candidate commit and tag"
+depends = ["check-release"]
 run = "uv run cz bump --prerelease rc"
 
 [tasks.release]
 description = "Push the latest release commit and tag"
+depends = ["check-release"]
 run = """
 git push
 git push --tags

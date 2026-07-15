@@ -6,6 +6,13 @@ on:
       - "v*a*"
       - "v*b*"
       - "v*rc*"
+    branches: 
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    
 
 permissions:
   id-token: write
@@ -22,6 +29,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure tag points to main
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5

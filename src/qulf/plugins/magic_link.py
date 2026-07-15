@@ -77,9 +77,9 @@ class MagicLinkPlugin(QulfPlugin):
             raise InvalidTokenError("Invalid magic link")
 
         _user = await self.auth.db.get_user_by_email(email)
-        
+
         user = await self.auth.db.get_user_by_id(_user.id) if _user else None
-        
+
         if not user:
             # If a user joins using a magic link, we automatically onboard them.
             # We generate a strong, secure random password so the

@@ -44,9 +44,6 @@ python_version = "3.14"
 asyncio_mode = "auto"
 testpaths = ["tests"]
 
-[tool.pyrefly]
-python-version = "3.14.0"
-preset = "legacy"
 
 [dependency-groups]
 dev = [

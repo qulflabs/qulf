@@ -76,9 +76,45 @@ description = "Format code and styles"
 dir = "web"
 run = "pnpm format"
 
-[tasks.release]
-description = "Create a new release"
+[tasks.bump]
+description = "Create a stable release commit and tag"
 run = "uv run cz bump"
+
+[tasks."bump:alpha"]
+description = "Create an alpha release commit and tag"
+run = "uv run cz bump --prerelease alpha"
+
+[tasks."bump:beta"]
+description = "Create a beta release commit and tag"
+run = "uv run cz bump --prerelease beta"
+
+[tasks."bump:rc"]
+description = "Create a release candidate commit and tag"
+run = "uv run cz bump --prerelease rc"
+
+[tasks.release]
+description = "Push the latest release commit and tag"
+run = """
+git push
+git push --tags
+"""
+
+[tasks.test-wheel]
+description = "Test the built wheel in a clean environment"
+run = """
+uv venv .tmp/test-wheel
+uv pip install --python .tmp/test-wheel/bin/python dist/*.whl
+uv run --python .tmp/test-wheel/bin/python python -c "import qulf; print(qulf.__version__)"
+
+uv run \
+  --python .tmp/test-wheel/bin/python \
+  pytest tests/smoke -q
+
+echo "✅ Wheel smoke test passed successfully!"
+"""
+
+[settings]
+python.uv_venv_auto = "create|source"
 
 [settings.npm]
 package_manager = "pnpm"

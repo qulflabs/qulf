@@ -4,7 +4,11 @@ from typing import Any
 import pytest
 import pytest_asyncio
 
-from qulf.rate_limit import InMemoryTokenBucket
+from qulf.rate_limit import (
+    InMemorySlidingWindowLog,
+    InMemoryTokenBucket,
+    RateLimitResult,
+)
 
 
 @pytest.mark.asyncio
@@ -116,4 +120,175 @@ async def test_redis_token_bucket_concurrency(fake_redis: "Any") -> None:
     results = await asyncio.gather(*(try_consume() for _ in range(100)))
 
     successes = sum(1 for result in results if result)
+    assert successes == 50
+
+
+@pytest.mark.asyncio
+async def test_sliding_window_allows_up_to_limit() -> None:
+    limiter = InMemorySlidingWindowLog(max_requests=3, window_seconds=10.0)
+
+    for _ in range(3):
+        result = await limiter.consume("user_swl_1")
+        assert result.allowed is True
+
+
+@pytest.mark.asyncio
+async def test_sliding_window_blocks_at_limit() -> None:
+    limiter = InMemorySlidingWindowLog(max_requests=3, window_seconds=10.0)
+
+    for _ in range(3):
+        await limiter.consume("user_swl_2")
+
+    result = await limiter.consume("user_swl_2")
+    assert result.allowed is False
+    assert result.remaining == 0
+    assert result.reset_in > 0
+
+
+@pytest.mark.asyncio
+async def test_sliding_window_returns_correct_remaining() -> None:
+    limiter = InMemorySlidingWindowLog(max_requests=5, window_seconds=10.0)
+
+    result = await limiter.consume("user_swl_3")
+    assert result.allowed is True
+    assert result.remaining == 4
+
+    result = await limiter.consume("user_swl_3")
+    assert result.allowed is True
+    assert result.remaining == 3
+
+
+@pytest.mark.asyncio
+async def test_sliding_window_multiple_keys_isolated() -> None:
+    limiter = InMemorySlidingWindowLog(max_requests=2, window_seconds=10.0)
+
+    await limiter.consume("user_a_swl")
+    await limiter.consume("user_a_swl")
+    blocked = await limiter.consume("user_a_swl")
+    assert blocked.allowed is False
+
+    # user_b should have a fresh independent window
+    result = await limiter.consume("user_b_swl")
+    assert result.allowed is True
+
+
+@pytest.mark.asyncio
+async def test_sliding_window_resets_after_window_expires() -> None:
+    # 2 requests in a 0.2-second window
+    limiter = InMemorySlidingWindowLog(max_requests=2, window_seconds=0.2)
+
+    await limiter.consume("user_swl_exp")
+    await limiter.consume("user_swl_exp")
+    blocked = await limiter.consume("user_swl_exp")
+    assert blocked.allowed is False
+
+    # After the window expires, requests should be allowed again
+    await asyncio.sleep(0.25)
+
+    result = await limiter.consume("user_swl_exp")
+    assert result.allowed is True
+
+
+@pytest.mark.asyncio
+async def test_sliding_window_result_is_dataclass() -> None:
+    limiter = InMemorySlidingWindowLog(max_requests=5, window_seconds=10.0)
+    result = await limiter.consume("user_swl_type")
+    assert isinstance(result, RateLimitResult)
+    assert isinstance(result.allowed, bool)
+    assert isinstance(result.remaining, int)
+    assert isinstance(result.reset_in, float)
+
+
+@pytest.mark.asyncio
+async def test_sliding_window_concurrency() -> None:
+    limiter = InMemorySlidingWindowLog(max_requests=50, window_seconds=60.0)
+    key = "concurrent_swl_user"
+
+    async def try_consume() -> bool:
+        result = await limiter.consume(key)
+        return result.allowed
+
+    results = await asyncio.gather(*(try_consume() for _ in range(100)))
+
+    successes = sum(1 for r in results if r)
+    assert successes == 50
+
+
+# ---------------------------------------------------------------------------
+# RedisSlidingWindowLog tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_redis_sliding_window_allows_up_to_limit(fake_redis: Any) -> None:
+    from qulf.rate_limit import RedisSlidingWindowLog
+
+    limiter = RedisSlidingWindowLog(fake_redis, max_requests=3, window_seconds=10.0)
+
+    for _ in range(3):
+        result = await limiter.consume("redis_swl_1")
+        assert result.allowed is True
+
+
+@pytest.mark.asyncio
+async def test_redis_sliding_window_blocks_at_limit(fake_redis: Any) -> None:
+    from qulf.rate_limit import RedisSlidingWindowLog
+
+    limiter = RedisSlidingWindowLog(fake_redis, max_requests=3, window_seconds=10.0)
+
+    for _ in range(3):
+        await limiter.consume("redis_swl_2")
+
+    result = await limiter.consume("redis_swl_2")
+    assert result.allowed is False
+    assert result.remaining == 0
+    assert result.reset_in > 0
+
+
+@pytest.mark.asyncio
+async def test_redis_sliding_window_returns_correct_remaining(fake_redis: Any) -> None:
+    from qulf.rate_limit import RedisSlidingWindowLog
+
+    limiter = RedisSlidingWindowLog(fake_redis, max_requests=5, window_seconds=10.0)
+
+    result = await limiter.consume("redis_swl_3")
+    assert result.allowed is True
+    assert result.remaining == 4
+
+    result = await limiter.consume("redis_swl_3")
+    assert result.allowed is True
+    assert result.remaining == 3
+
+
+@pytest.mark.asyncio
+async def test_redis_sliding_window_resets_after_expiry(fake_redis: Any) -> None:
+    from qulf.rate_limit import RedisSlidingWindowLog
+
+    limiter = RedisSlidingWindowLog(fake_redis, max_requests=2, window_seconds=0.2)
+
+    await limiter.consume("redis_swl_exp")
+    await limiter.consume("redis_swl_exp")
+    blocked = await limiter.consume("redis_swl_exp")
+    assert blocked.allowed is False
+
+    await asyncio.sleep(0.25)
+
+    result = await limiter.consume("redis_swl_exp")
+    assert result.allowed is True
+
+
+@pytest.mark.asyncio
+async def test_redis_sliding_window_concurrency(fake_redis: Any) -> None:
+    from qulf.rate_limit import RedisSlidingWindowLog
+
+    limiter = RedisSlidingWindowLog(fake_redis, max_requests=50, window_seconds=60.0)
+    key = "concurrent_redis_swl"
+
+    async def try_consume() -> bool:
+        result = await limiter.consume(key)
+        return result.allowed
+
+    results = await asyncio.gather(*(try_consume() for _ in range(100)))
+
+    successes = sum(1 for r in results if r)
     assert successes == 50

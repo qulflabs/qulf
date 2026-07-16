@@ -1,7 +1,7 @@
 import asyncio
 import time
-from typing import Any
 from abc import ABC, abstractmethod
+from typing import Any
 
 
 class BaseRateLimiter(ABC):
@@ -141,7 +141,7 @@ class RedisTokenBucket(BaseRateLimiter):
     async def consume(self, key: str, tokens: int = 1) -> bool:
         redis_key = f"qulf:ratelimit:{key}"
         now = time.time()
-        
+
         # eval returns an int (0 or 1) based on our Lua script
         result = await self.redis.eval(
             self.LUA_SCRIPT,
@@ -153,4 +153,3 @@ class RedisTokenBucket(BaseRateLimiter):
             now,
         )
         return bool(result)
-

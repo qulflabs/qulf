@@ -2,3 +2,11 @@
 __pycache__/
 *.pyc
 *.pyo
+.agents/skills/animejs/
+src/qulf.egg-info/
+.coverage
+coverage.xml
+junit.xml
+skills-lock.json
+*.db
+dist/

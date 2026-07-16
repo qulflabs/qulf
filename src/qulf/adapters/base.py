@@ -1,7 +1,15 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
+from typing import Any
 
-from qulf.types import Account, AccountCreate, Session, User, UserCreate, UserWithPassword
+from qulf.types import (
+    Account,
+    AccountCreate,
+    Session,
+    User,
+    UserCreate,
+    UserWithPassword,
+)
 
 
 class DatabaseAdapter(ABC):
@@ -31,6 +39,12 @@ class DatabaseAdapter(ABC):
         pass  # pragma: no cover
 
     @abstractmethod
+    async def update_user(
+        self, user_id: str | int, update_data: dict[str, Any]
+    ) -> User:
+        pass  # pragma: no cover
+
+    @abstractmethod
     async def create_session(
         self,
         user_id: int | str,
@@ -52,11 +66,39 @@ class DatabaseAdapter(ABC):
         pass  # pragma: no cover
 
     @abstractmethod
-    async def delete_session(self, token: str) -> None:
+    async def delete_session(self, token: str) -> bool:
         """
         Removes a session token from the database.
         """
         pass  # pragma: no cover
+
+    @abstractmethod
+    async def get_user_sessions(self, user_id: str | int) -> list[Session]:
+        """Fetch all active sessions for a specific user."""
+        pass
+
+    @abstractmethod
+    async def delete_user_session(
+        self, user_id: str | int, token: str | None = None
+    ) -> bool:
+        """
+        Delete a session with the provided `token` for a user.
+
+        return bool
+        """
+        pass
+
+    @abstractmethod
+    async def delete_all_user_sessions(
+        self, user_id: str | int, except_token: str | None = None
+    ) -> list[str]:
+        """
+        Delete all sessions for a user.
+        If except_token is provided, do NOT delete the session with that token.
+
+        return a list of ID's of the deleted instances
+        """
+        pass
 
     @abstractmethod
     async def create_account(self, account_data: AccountCreate) -> Account:

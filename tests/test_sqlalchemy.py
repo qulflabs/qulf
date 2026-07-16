@@ -51,7 +51,9 @@ async def test_sqlalchemy_session_validation_naive(sqlite_adapter: SQLAlchemyAda
     from qulf.core import Qulf
     from qulf.types import UserCreate
 
-    config = QulfConfig(secret_key="super_secret_test_key_that_is_at_least_32_bytes_long")
+    config = QulfConfig(
+        secret_key="super_secret_test_key_that_is_at_least_32_bytes_long"
+    )
     auth = Qulf(db=sqlite_adapter, config=config)
     user_data = UserCreate(
         name="DB User 2",

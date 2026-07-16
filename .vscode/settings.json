@@ -2,7 +2,9 @@
     "cSpell.words": [
         "bento",
         "passwordless",
-        "Qulf"
+        "Qulf",
+        "statelessly",
+        "totp"
     ],
     "biome.enabled": true,
     "editor.codeActionsOnSave": {
@@ -18,4 +20,14 @@
     "editor.quickSuggestions": {
         "strings": true
     },
+    "search.exclude": {
+        "**/.venv": true
+    },
+    "files.watcherExclude": {
+        "**/.git/objects/**": true,
+        "**/.git/subtree-cache/**": true,
+        "**/node_modules/**": true,
+        "**/target/**": true
+    },
+    "python.analysis.autoImportCompletions": true
 }

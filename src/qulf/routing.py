@@ -11,6 +11,8 @@ class QulfRequest(BaseModel):
 
     body: dict[str, Any] = {}
     query_params: dict[str, str] = {}
+    path_params: dict[str, str] = {}
+    cookies: dict[str, str] = {}
     ip_address: str | None = None
     user_agent: str | None = None
 
@@ -29,7 +31,8 @@ class QulfResponse(BaseModel):
     """
 
     status_code: int = 200
-    body: dict[str, Any] = {}
+    body: dict[str, Any] | None = None
+    headers: dict[str, str] = {}
     set_cookies: list[CookieOptions] = []
     delete_cookies: list[str] = []
 

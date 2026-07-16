@@ -1,10 +1,17 @@
+from collections.abc import Awaitable, Callable, Coroutine
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Request, Response
 
 from qulf.core import Qulf
 from qulf.exceptions import QulfException
 from qulf.frameworks.base import SignInRequest
-from qulf.routing import QulfRequest
+from qulf.routing import QulfRequest, QulfResponse
 from qulf.types import User, UserCreate
+
+Handler = Callable[[QulfRequest], Awaitable[QulfResponse]]
+
+Endpoint = Callable[[Request, Response], Coroutine[Any, Any, dict[str, Any] | None]]
 
 
 def serve_qulf(auth: Qulf) -> APIRouter:
@@ -48,7 +55,7 @@ def serve_qulf(auth: Qulf) -> APIRouter:
         return {"message": "Signed in successfully"}
 
     @router.post("/sign-out")
-    async def sign_out(request: Request, response: Response) -> dict[str, str]:
+    async def sign_out(request: Request, response: Response) -> dict[str, Any]:
         token = request.cookies.get(auth.config.cookies.name)
         if token:
             await auth.sign_out(token)
@@ -59,8 +66,10 @@ def serve_qulf(auth: Qulf) -> APIRouter:
     for plugin in auth.plugins.values():
         for qulf_route in plugin.get_routes():
 
-            def make_endpoint(handler):
-                async def dynamic_endpoint(request: Request, response: Response):
+            def make_endpoint(handler: Handler) -> Endpoint:
+                async def dynamic_endpoint(
+                    request: Request, response: Response
+                ) -> dict[str, Any] | None:
                     body = {}
                     if request.method in ["POST", "PUT", "PATCH"]:
                         try:
@@ -71,6 +80,8 @@ def serve_qulf(auth: Qulf) -> APIRouter:
                     qulf_request = QulfRequest(
                         body=body,
                         query_params=dict(request.query_params),
+                        path_params=request.path_params,
+                        cookies=request.cookies,
                         ip_address=request.client.host if request.client else None,
                         user_agent=request.headers.get("user-agent"),
                     )
@@ -78,6 +89,9 @@ def serve_qulf(auth: Qulf) -> APIRouter:
                     qulf_response = await handler(qulf_request)
 
                     response.status_code = qulf_response.status_code
+
+                    for key, value in qulf_response.headers.items():
+                        response.headers[key] = value
 
                     for cookie in qulf_response.set_cookies:
                         response.set_cookie(

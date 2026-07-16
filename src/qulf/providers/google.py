@@ -2,12 +2,12 @@ from urllib.parse import urlencode
 
 import httpx
 
+from qulf.exceptions import QulfException
 from qulf.providers.base import (
     BaseOAuthProvider,
     OAuthTokenResponse,
     OAuthUserProfile,
 )
-from qulf.exceptions import QulfException
 
 
 class GoogleProvider(BaseOAuthProvider):
@@ -52,7 +52,11 @@ class GoogleProvider(BaseOAuthProvider):
 
             result = response.json()
             if "error" in result:
-                raise QulfException(f"Google OAuth error: {result.get('error_description', result['error'])}")
+                raise QulfException(
+                    f"""
+                Google OAuth error: {result.get("error_description", result["error"])}
+                """
+                )
 
             return OAuthTokenResponse(
                 access_token=result["access_token"],
@@ -71,7 +75,7 @@ class GoogleProvider(BaseOAuthProvider):
 
         async with httpx.AsyncClient() as client:
             response = await client.get(self.USERINFO_URL, headers=headers)
-            
+
             if response.status_code != 200:
                 raise QulfException(f"Failed to fetch user profile: {response.text}")
 
@@ -85,7 +89,9 @@ class GoogleProvider(BaseOAuthProvider):
                 id=str(user_data.get("sub", user_data.get("id"))),
                 email=email,
                 name=user_data.get("name"),
-                username=user_data.get("email").split("@")[0] if user_data.get("email") else None,
+                username=user_data.get("email").split("@")[0]
+                if user_data.get("email")
+                else None,
                 avatar_url=user_data.get("picture"),
                 raw_data=user_data,
             )

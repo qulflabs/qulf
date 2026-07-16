@@ -8,11 +8,17 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from qulf.adapters.base import DatabaseAdapter
 from qulf.types import (
     Account as QulfAccountType,
+)
+from qulf.types import (
     AccountCreate,
-    Session as QulfSessionType,
-    User as QulfUserType,
     UserCreate,
     UserWithPassword,
+)
+from qulf.types import (
+    Session as QulfSessionType,
+)
+from qulf.types import (
+    User as QulfUserType,
 )
 
 
@@ -70,10 +76,10 @@ class DefaultUser(QulfBase, UserMixin):
 
 
 class DefaultSession(QulfBase, SessionMixin):
-    """Default Session table schema ('qulf_session')
+    """Default Session table schema ('session')
     used if no custom model is supplied."""
 
-    __tablename__ = "qulf_session"
+    __tablename__ = "session"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"))
 
@@ -101,9 +107,11 @@ class AccountMixin:
 
 
 class DefaultAccount(QulfBase, AccountMixin):
-    """Default Account table schema ('qulf_account') used if no custom model is supplied."""
+    """
+    Default Account table schema ('account') used if no custom model is supplied.
+    """
 
-    __tablename__ = "qulf_account"
+    __tablename__ = "account"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"))
 
@@ -148,8 +156,7 @@ class SQLAlchemyAdapter(DatabaseAdapter):
 
     async def get_user_by_email(self, email: str) -> UserWithPassword | None:
         # We retrieve short-lived sessions directly inside database operations to
-        # make sure connections are checked back into the pool as fast as possible,
-        # avoiding connection starvation during long-running API operations.
+        # make sure connections are checked back into the pool as fast as possible
         async with self.session_maker() as session:
             stmt = select(self.user_model).where(self.user_model.email == email)
             result = await session.execute(stmt)
@@ -157,7 +164,7 @@ class SQLAlchemyAdapter(DatabaseAdapter):
             if not db_user:
                 return None
             # Enforcing from_attributes=True instructs Pydantic to read SQLAlchemy ORM
-            # properties as attributes (obj.field) rather than searching for dict keys.
+            # properties as attributes (obj.field)
             return UserWithPassword.model_validate(db_user, from_attributes=True)
 
     async def get_user_by_id(self, user_id: str | int) -> QulfUserType | None:
@@ -184,6 +191,35 @@ class SQLAlchemyAdapter(DatabaseAdapter):
             await session.commit()
             await session.refresh(new_user)
             return QulfUserType.model_validate(new_user, from_attributes=True)
+
+    async def update_user(
+        self, user_id: str | int, update_data: dict[str, Any]
+    ) -> QulfUserType:
+        """
+        Args:
+            user_id (str | int)
+            update_data (dict[str, Any]): **Trusted data!**
+
+        Raises:
+            ValueError: User not found
+
+        Returns:
+            User
+        """
+        async with self.session_maker() as session:
+            result = await session.execute(
+                select(self.user_model).where(self.user_model.id == user_id)
+            )
+            user = result.scalars().first()
+            if not user:
+                raise ValueError("User not found")
+
+            for field, value in update_data.items():
+                setattr(user, field, value)
+
+            await session.commit()
+            await session.refresh(user)
+            return QulfUserType.model_validate(user, from_attributes=True)
 
     async def create_session(
         self,
@@ -216,11 +252,68 @@ class SQLAlchemyAdapter(DatabaseAdapter):
                 return None
             return QulfSessionType.model_validate(db_session, from_attributes=True)
 
-    async def delete_session(self, token: str) -> None:
+    async def delete_session(self, token: str) -> bool:
         async with self.session_maker() as session:
-            stmt = delete(self.session_model).where(self.session_model.token == token)
-            await session.execute(stmt)
+            stmt = (
+                delete(self.session_model)
+                .where(self.session_model.token == token)
+                .returning(self.session_model.id)
+            )
+            result = await session.execute(stmt)
             await session.commit()
+            deleted_id = result.scalar()
+
+            return deleted_id is not None
+
+    async def get_user_sessions(self, user_id: str | int) -> list[QulfSessionType]:
+        async with self.session_maker() as session:
+            stmt = select(self.session_model).where(
+                self.session_model.user_id == user_id
+            )
+            result = await session.execute(stmt)
+            db_session = result.scalars().all()
+            return [
+                QulfSessionType.model_validate(db_s, from_attributes=True)
+                for db_s in db_session
+            ]
+
+    async def delete_user_session(
+        self, user_id: str | int, token: str | None = None
+    ) -> bool:
+        async with self.session_maker() as session:
+            stmt = (
+                delete(self.session_model)
+                .where(
+                    self.session_model.user_id == user_id,
+                    self.session_model.token == token,
+                )
+                .returning(self.session_model.id)
+            )
+            result = await session.execute(stmt)
+            await session.commit()
+            deleted_id = result.scalar()
+
+            return deleted_id is not None
+
+    async def delete_all_user_sessions(
+        self, user_id: str | int, except_token: str | None = None
+    ) -> list[str]:
+        async with self.session_maker() as session:
+            delete_stmt = delete(self.session_model).where(
+                self.session_model.user_id == user_id
+            )
+
+            if except_token is not None:
+                where_stmt = delete_stmt.where(self.session_model.token != except_token)
+
+            stmt = where_stmt.returning(self.session_model.token)
+
+            result = await session.execute(stmt)
+            await session.commit()
+
+            deleted_tokens = list(result.scalars().all())
+
+            return deleted_tokens
 
     async def create_account(self, account_data: AccountCreate) -> QulfAccountType:
         async with self.session_maker() as session:

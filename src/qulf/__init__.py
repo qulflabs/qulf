@@ -1,4 +1,19 @@
-from qulf.core import Qulf, QulfConfig
-from qulf.plugins.magic_link import MagicLinkPlugin
+from importlib.metadata import PackageNotFoundError, version
 
-__all__ = ["Qulf", "QulfConfig", "MagicLinkPlugin"]
+from qulf.config import QulfConfig
+from qulf.core import Qulf
+from qulf.routing import QulfRequest, QulfResponse, QulfRoute
+
+try:
+    __version__ = version("qulf")
+except PackageNotFoundError:
+    __version__ = "unknown"
+
+__all__ = [
+    "Qulf",
+    "QulfConfig",
+    "QulfRequest",
+    "QulfResponse",
+    "QulfRoute",
+    "__version__",
+]

@@ -1,7 +1,11 @@
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from qulf.exceptions import ConfigurationError
 from qulf.routing import QulfRoute
 from qulf.types import Session, User, UserCreate
+
+if TYPE_CHECKING:
+    from qulf.core import Qulf
 
 
 class QulfPlugin:
@@ -14,15 +18,31 @@ class QulfPlugin:
 
     name: str
 
-    def setup(self, auth: Any) -> None:
+    _auth: "Qulf | None" = None
+
+    @property
+    def auth(self) -> "Qulf":
+        """Fail fast if not initialized, but provide strict types to the IDE!"""
+        if not self._auth:
+            raise ConfigurationError(
+                f"Plugin {self.name} has not been initialized by Qulf."
+            )
+        return self._auth
+
+    @auth.setter
+    def auth(self, value: "Qulf") -> None:
+        """Allow assignment during setup()."""
+        self._auth = value
+
+    def setup(self, auth: "Qulf") -> None:
         """
         **Called when the plugin is initialized within the Qulf engine.**
 
-        Passing the `auth` instance gives the plugin access to the primary configuration
+        Gives the plugin access to the primary configuration
         and the shared database adapter,
         allowing the plugin to query database records safely.
         """
-        pass  # pragma: no cover
+        self.auth = auth
 
     def get_routes(self) -> list[QulfRoute]:
         """

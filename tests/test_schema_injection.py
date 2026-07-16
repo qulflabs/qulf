@@ -28,10 +28,12 @@ async def test_sqlalchemy_schema_injection():
         secret_key="super_secret_test_key_that_is_at_least_32_bytes_long"
     )
 
-    # 2. Initialize Qulf (This dynamically injects the columns into the SQLAlchemy Models!)
+    # 2. Initialize Qulf
+    # (This dynamically injects the columns into the SQLAlchemy Models!)
     auth = Qulf(db=adapter, config=config, plugins=[plugin])
 
-    # 3. NOW create the tables! SQLAlchemy will see the injected columns and tell SQLite to create them.
+    # 3. NOW create the tables! SQLAlchemy
+    # will see the injected columns and tell SQLite to create them.
     async with engine.begin() as conn:
         await conn.run_sync(QulfBase.metadata.create_all)
 
@@ -43,7 +45,7 @@ async def test_sqlalchemy_schema_injection():
         password="p",
         password_confirmation="p",
     )
-    user = await auth.sign_up(user_data)
+    _user = await auth.sign_up(user_data)
 
     # 5. Update the custom column directly via SQLAlchemy to prove it exists
     async with session_maker() as session:

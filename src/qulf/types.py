@@ -1,12 +1,14 @@
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, model_validator
 
 
 class CoreModel(BaseModel):
     """
     Common base schema for all Qulf entities containing tracking properties.
     """
+
+    model_config = ConfigDict(extra="allow")
 
     id: int | str
     created_at: datetime
@@ -45,6 +47,19 @@ class UserCreate(BaseModel):
         if self.password != self.password_confirmation:
             raise ValueError("Passwords do not match")
         return self
+
+
+class UserUpdate(BaseModel):
+    """
+    Validation schema for updating a user account.
+
+    Enforces password matching and standard syntax before creation proceeds.
+    """
+
+    id: int | str
+    name: str
+    email: EmailStr
+    username: str
 
 
 class UserWithPassword(User):

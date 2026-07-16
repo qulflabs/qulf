@@ -98,7 +98,6 @@ def test_magic_link_fastapi_routes(memory_db, email_sender):
 
     plugin = MagicLinkPlugin(send_email_func=email_sender.send)
 
-
     config = QulfConfig(
         secret_key="super_secret_test_key_that_is_at_least_32_bytes_long"
     )

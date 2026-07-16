@@ -42,7 +42,7 @@ async def test_token_bucket_refill() -> None:
     assert await bucket.consume("user_c", tokens=2) is True
     assert await bucket.consume("user_c") is False
 
-    # Wait for 0.11 seconds to guarantee 1 token is refilled
+    # Wait for 0.15 seconds to guarantee 1 token is refilled
     await asyncio.sleep(0.15)
 
     # Should have 1 token refilled

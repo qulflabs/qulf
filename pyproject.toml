@@ -27,6 +27,7 @@ authors = [
 [project.optional-dependencies]
 dev = ["ruff>=0.3.0", "mypy>=1.8.0"]
 test = ["pytest>=8.0.0", "pytest-cov>=4.1.0", "pytest-asyncio>=0.23.0"]
+redis = ["redis>=5.0.0"]
 
 [tool.ruff]
 line-length = 88
@@ -49,8 +50,10 @@ testpaths = ["tests"]
 dev = [
     "aiosqlite>=0.22.1",
     "commitizen>=4.16.4",
+    "fakeredis[lua]>=2.20.0",
     "httpx>=0.28.1",
     "pre-commit>=4.6.0",
+    "redis>=5.0.0",
     "respx>=0.23.1",
 ]
 

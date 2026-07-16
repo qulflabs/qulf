@@ -81,3 +81,11 @@ class Requires2FAError(QulfException):
     """
 
     pass
+
+
+class RateLimitExceededError(QulfException):
+    """
+    Raised when a user or IP address exceeds their allowed request limit.
+    """
+
+    pass

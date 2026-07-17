@@ -29,7 +29,7 @@ class RateLimitPlugin(QulfPlugin):
         if not result.allowed:
             raise RateLimitExceededError(
                 message=f"Rate limit exceeded for action: {action}",
-                retry_after=result.reset_in_seconds,
+                retry_after=int(result.reset_in),
             )
 
     async def before_sign_in(self, email: str, ip_address: str | None = None) -> None:
@@ -37,6 +37,7 @@ class RateLimitPlugin(QulfPlugin):
         if not self.protect_sign_in:
             return
 
-        # Creates a composite lock if IP is present, otherwise just locks the email
+        # Creates a composite lock if IP present 
+        # otherwise locks the email
         target = [ip_address, email] if ip_address else email
         await self.enforce("signin", target)

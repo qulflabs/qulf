@@ -27,6 +27,7 @@ class UserMixin(SQLModel):
     """
     SQLModel column definitions for the Qulf User model.
     """
+
     email: str = Field(unique=True, index=True)
     name: str
     username: str = Field(unique=True, index=True)
@@ -40,6 +41,7 @@ class SessionMixin(SQLModel):
     """
     SQLModel column definitions for the Qulf Session model.
     """
+
     token: str = Field(unique=True, index=True)
     expires_at: datetime
     ip_address: str | None = None
@@ -52,6 +54,7 @@ class AccountMixin(SQLModel):
     """
     SQLModel column definitions for the Qulf Account model.
     """
+
     provider_id: str = Field(index=True)
     account_id: str = Field(index=True)
     access_token: str | None = None
@@ -212,6 +215,7 @@ class SQLModelAdapter(DatabaseAdapter):
 
     async def delete_session(self, token: str) -> bool:
         from sqlalchemy import delete
+
         async with self.session_maker() as session:
             stmt = (
                 delete(self.session_model)
@@ -240,6 +244,7 @@ class SQLModelAdapter(DatabaseAdapter):
         self, user_id: str | int, token: str | None = None
     ) -> bool:
         from sqlalchemy import delete
+
         async with self.session_maker() as session:
             stmt = (
                 delete(self.session_model)
@@ -259,6 +264,7 @@ class SQLModelAdapter(DatabaseAdapter):
         self, user_id: str | int, except_token: str | None = None
     ) -> list[str]:
         from sqlalchemy import delete
+
         async with self.session_maker() as session:
             delete_stmt = delete(self.session_model).where(
                 self.session_model.user_id == user_id

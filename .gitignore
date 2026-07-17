@@ -11,3 +11,5 @@ skills-lock.json
 *.db
 dist/
 bin/act
+web/node_modules/
+web/.next/

@@ -37,7 +37,7 @@ class RateLimitPlugin(QulfPlugin):
         if not self.protect_sign_in:
             return
 
-        # Creates a composite lock if IP present 
+        # Creates a composite lock if IP present
         # otherwise locks the email
         target = [ip_address, email] if ip_address else email
         await self.enforce("signin", target)

@@ -84,8 +84,6 @@ class Requires2FAError(QulfException):
 
 
 class RateLimitExceededError(QulfException):
-    """
-    Raised when a user or IP address exceeds their allowed request limit.
-    """
-
-    pass
+    def __init__(self, message: str, retry_after: int):
+        super().__init__(message)
+        self.retry_after = retry_after

@@ -19,7 +19,10 @@ uv pip install -e ".[dev,test,redis]"
 
 [tasks.format]
 description = "Format code using Ruff"
-run = "uv run ruff format src/ tests/"
+run = """
+uv run ruff format src/ tests/
+uv run ruff check --select RUF022 --fix
+"""
 
 [tasks.lint]
 description = "Lint code and check types"

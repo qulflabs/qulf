@@ -82,6 +82,7 @@ class Requires2FAError(QulfException):
 
     pass
 
+
 class RateLimitExceededError(QulfException):
     def __init__(self, message: str, retry_after: int):
         super().__init__(message)

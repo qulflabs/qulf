@@ -6,8 +6,6 @@ from qulf.rate_limit.base import BaseRateLimiter, RateLimitResult
 from qulf.rate_limit.config import TokenBucketConfig
 
 
-
-
 class BucketState:
     def __init__(self, capacity: int) -> None:
         self.tokens: float = float(capacity)
@@ -28,7 +26,7 @@ class InMemoryTokenBucket(BaseRateLimiter):
         This prevents an out-of-memory (OOM) leak from an unbounded dictionary.
         """
         full_refill_time = self.config.capacity / self.config.refill_rate
-        
+
         for key in list(self._buckets.keys()):
             if (now - self._buckets[key].last_refill) >= full_refill_time:
                 del self._buckets[key]
@@ -37,7 +35,7 @@ class InMemoryTokenBucket(BaseRateLimiter):
         async with self._global_lock:
             if len(self._buckets) >= self.config.max_memory_keys:
                 self._prune(time.monotonic())
-                
+
             if key not in self._buckets:
                 self._buckets[key] = BucketState(self.config.capacity)
             return self._buckets[key]
@@ -48,15 +46,17 @@ class InMemoryTokenBucket(BaseRateLimiter):
             now = time.monotonic()
             elapsed = now - bucket.last_refill
             refill_amount = elapsed * self.config.refill_rate
-            
+
             if refill_amount > 0:
-                bucket.tokens = min(float(self.config.capacity), bucket.tokens + refill_amount)
+                bucket.tokens = min(
+                    float(self.config.capacity), bucket.tokens + refill_amount
+                )
                 bucket.last_refill = now
-                
+
             allowed = bucket.tokens >= tokens
             if allowed:
                 bucket.tokens -= tokens
-                
+
             remaining = int(bucket.tokens)
             reset_in = (
                 max(0.0, (tokens - bucket.tokens) / self.config.refill_rate)
@@ -66,6 +66,7 @@ class InMemoryTokenBucket(BaseRateLimiter):
             return RateLimitResult(
                 allowed=allowed, remaining=remaining, reset_in=reset_in
             )
+
 
 class RedisTokenBucket(BaseRateLimiter):
     LUA_SCRIPT = """
@@ -117,15 +118,16 @@ class RedisTokenBucket(BaseRateLimiter):
     async def consume(self, key: str, tokens: int = 1) -> RateLimitResult:
         redis_key = f"{self.config.key_prefix}{key}"
         now = time.time()
-        
+
         result = await self._script(
             keys=[redis_key],
-            args=[self.config.capacity, self.config.refill_rate, tokens, now]
+            args=[self.config.capacity, self.config.refill_rate, tokens, now],
         )
-        
-        # THE FIX: Divide the returned integer by 1000.0 to safely reconstruct the float!
+
+        # THE FIX: Divide the returned integer
+        # by 1000.0 to safely reconstruct the float!
         return RateLimitResult(
-            allowed=bool(result[0]), 
-            remaining=int(result[1]), 
-            reset_in=float(result[2]) / 1000.0
+            allowed=bool(result[0]),
+            remaining=int(result[1]),
+            reset_in=float(result[2]) / 1000.0,
         )

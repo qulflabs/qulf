@@ -5,8 +5,14 @@ import pytest
 import pytest_asyncio
 from pydantic import ValidationError
 
-from qulf.rate_limit.config import TokenBucketConfig
-from qulf.rate_limit.token_bucket import InMemoryTokenBucket, RedisTokenBucket
+from qulf.rate_limit import (
+    InMemorySlidingWindowLog,
+    InMemoryTokenBucket,
+    RedisSlidingWindowLog,
+    RedisTokenBucket,
+    SlidingWindowConfig,
+    TokenBucketConfig,
+)
 
 
 # ==========================================
@@ -16,7 +22,7 @@ def test_token_bucket_config_validation() -> None:
     # Valid config
     config = TokenBucketConfig(capacity=10, refill_rate=2.5, max_memory_keys=100)
     assert config.capacity == 10
-    
+
     # Invalid config (should fail fast due to Pydantic strictness)
     with pytest.raises(ValidationError):
         TokenBucketConfig(capacity=-5, refill_rate=1.0)  # capacity must be > 0
@@ -29,7 +35,7 @@ def test_token_bucket_config_validation() -> None:
 async def test_in_memory_tb_basic_and_reset_math() -> None:
     config = TokenBucketConfig(capacity=3, refill_rate=1.0)
     bucket = InMemoryTokenBucket(config)
-    
+
     res1 = await bucket.consume("user_1")
     assert res1.allowed is True
     assert res1.remaining == 2
@@ -39,7 +45,7 @@ async def test_in_memory_tb_basic_and_reset_math() -> None:
     res3 = await bucket.consume("user_1")
     assert res3.allowed is True
     assert res3.remaining == 0
-    
+
     # Bucket is empty, should reject and calculate exact reset_in
     res4 = await bucket.consume("user_1")
     assert res4.allowed is False
@@ -51,20 +57,20 @@ async def test_in_memory_tb_basic_and_reset_math() -> None:
 @pytest.mark.asyncio
 async def test_in_memory_tb_refill_simulation() -> None:
     # Refills 10 tokens/sec (0.1s per token)
-    config = TokenBucketConfig(capacity=5, refill_rate=10.0) 
+    config = TokenBucketConfig(capacity=5, refill_rate=10.0)
     bucket = InMemoryTokenBucket(config)
-    
+
     # Drain completely
     for _ in range(5):
         await bucket.consume("fast_user")
-        
+
     assert (await bucket.consume("fast_user")).allowed is False
-    
+
     # Manually hack the internal state to simulate time passing (0.2 seconds)
     # This avoids using flaky time.sleep() in async tests!
     state = bucket._buckets["fast_user"]
-    state.last_refill -= 0.25 
-    
+    state.last_refill -= 0.25
+
     # 0.25 seconds * 10 tokens/sec = 2.5 tokens refilled. Floor is 2.
     res = await bucket.consume("fast_user", tokens=2)
     assert res.allowed is True
@@ -76,31 +82,31 @@ async def test_in_memory_tb_prune_memory_leak_fix() -> None:
     # Max keys is 2. full_refill_time = 10.0 / 1.0 = 10 seconds.
     config = TokenBucketConfig(capacity=10, refill_rate=1.0, max_memory_keys=2)
     bucket = InMemoryTokenBucket(config)
-    
+
     await bucket.consume("key_1")
     await bucket.consume("key_2")
-    
+
     # Manually age key_1 past the full_refill_time (10+ seconds)
     bucket._buckets["key_1"].last_refill -= 15.0
     # Age key_2 just a little bit (should NOT be pruned)
     bucket._buckets["key_2"].last_refill -= 2.0
-    
+
     # Hitting key_3 will trigger the prune because len(_buckets) >= 2
     await bucket.consume("key_3")
-    
+
     assert "key_1" not in bucket._buckets  # Pruned! Memory saved!
-    assert "key_2" in bucket._buckets      # Kept! Still partially active.
-    assert "key_3" in bucket._buckets      # Added!
+    assert "key_2" in bucket._buckets  # Kept! Still partially active.
+    assert "key_3" in bucket._buckets  # Added!
 
 
 @pytest.mark.asyncio
 async def test_in_memory_tb_concurrency() -> None:
     config = TokenBucketConfig(capacity=50, refill_rate=0.1)
     bucket = InMemoryTokenBucket(config)
-    
+
     async def try_consume() -> bool:
         return (await bucket.consume("concurrent_user")).allowed
-        
+
     results = await asyncio.gather(*(try_consume() for _ in range(100)))
     successes = sum(1 for r in results if r)
     assert successes == 50
@@ -112,6 +118,7 @@ async def test_in_memory_tb_concurrency() -> None:
 @pytest_asyncio.fixture
 async def fake_redis() -> Any:
     from fakeredis.aioredis import FakeRedis
+
     client = FakeRedis()
     yield client
     await client.aclose()
@@ -121,10 +128,10 @@ async def fake_redis() -> Any:
 async def test_redis_tb_basic(fake_redis: Any) -> None:
     config = TokenBucketConfig(capacity=5, refill_rate=1.0, key_prefix="test:tb:")
     bucket = RedisTokenBucket(fake_redis, config)
-    
+
     for _ in range(5):
         assert (await bucket.consume("redis_user")).allowed is True
-        
+
     res = await bucket.consume("redis_user")
     assert res.allowed is False
     assert res.remaining == 0
@@ -135,9 +142,97 @@ async def test_redis_tb_basic(fake_redis: Any) -> None:
 async def test_redis_tb_concurrency(fake_redis: Any) -> None:
     config = TokenBucketConfig(capacity=50, refill_rate=0.01, key_prefix="test:tb:")
     bucket = RedisTokenBucket(fake_redis, config)
-    
+
     async def try_consume() -> bool:
         return (await bucket.consume("concurrent_redis")).allowed
-        
+
+    results = await asyncio.gather(*(try_consume() for _ in range(100)))
+    assert sum(1 for r in results if r) == 50
+
+
+def test_sliding_window_config_validation() -> None:
+    config = SlidingWindowConfig(max_requests=10, window_seconds=60.0)
+    assert config.max_requests == 10
+
+    with pytest.raises(ValidationError):
+        SlidingWindowConfig(max_requests=0, window_seconds=10.0)
+
+
+# ==========================================
+# 5. In-Memory Sliding Window Tests
+# ==========================================
+@pytest.mark.asyncio
+async def test_in_memory_swl_basic() -> None:
+    config = SlidingWindowConfig(max_requests=3, window_seconds=1.0)
+    limiter = InMemorySlidingWindowLog(config)
+
+    # Send 3 allowed requests
+    for expected_remaining in [2, 1, 0]:
+        res = await limiter.consume("swl_user")
+        assert res.allowed is True
+        assert res.remaining == expected_remaining
+
+    # 4th request should be rejected
+    res_reject = await limiter.consume("swl_user")
+    assert res_reject.allowed is False
+    assert res_reject.remaining == 0
+    assert res_reject.reset_in > 0.0
+
+
+@pytest.mark.asyncio
+async def test_in_memory_swl_pruning() -> None:
+    config = SlidingWindowConfig(max_requests=5, window_seconds=1.0, max_memory_keys=2)
+    limiter = InMemorySlidingWindowLog(config)
+
+    await limiter.consume("user1")
+    await limiter.consume("user2")
+
+    # Hack time backward for user1 so it expires completely
+    limiter._windows["user1"].timestamps[0] -= 5.0
+
+    # Trigger prune by adding a 3rd key
+    await limiter.consume("user3")
+
+    assert "user1" not in limiter._windows  # Successfully pruned!
+    assert "user2" in limiter._windows
+    assert "user3" in limiter._windows
+
+
+@pytest.mark.asyncio
+async def test_in_memory_swl_concurrency() -> None:
+    config = SlidingWindowConfig(max_requests=50, window_seconds=10.0)
+    limiter = InMemorySlidingWindowLog(config)
+
+    async def try_consume() -> bool:
+        return (await limiter.consume("swl_concurrent")).allowed
+
+    results = await asyncio.gather(*(try_consume() for _ in range(100)))
+    assert sum(1 for r in results if r) == 50
+
+
+# ==========================================
+# 6. Redis Sliding Window Tests
+# ==========================================
+@pytest.mark.asyncio
+async def test_redis_swl_basic(fake_redis: Any) -> None:
+    config = SlidingWindowConfig(max_requests=2, window_seconds=5.0)
+    limiter = RedisSlidingWindowLog(fake_redis, config)
+
+    assert (await limiter.consume("redis_swl")).allowed is True
+    assert (await limiter.consume("redis_swl")).allowed is True
+
+    reject = await limiter.consume("redis_swl")
+    assert reject.allowed is False
+    assert reject.reset_in > 0
+
+
+@pytest.mark.asyncio
+async def test_redis_swl_concurrency(fake_redis: Any) -> None:
+    config = SlidingWindowConfig(max_requests=50, window_seconds=10.0)
+    limiter = RedisSlidingWindowLog(fake_redis, config)
+
+    async def try_consume() -> bool:
+        return (await limiter.consume("redis_swl_conc")).allowed
+
     results = await asyncio.gather(*(try_consume() for _ in range(100)))
     assert sum(1 for r in results if r) == 50

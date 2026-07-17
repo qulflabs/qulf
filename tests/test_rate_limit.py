@@ -6,8 +6,11 @@ import pytest_asyncio
 from pydantic import ValidationError
 
 from qulf.rate_limit import (
+    FixedWindowConfig,
+    InMemoryFixedWindow,
     InMemorySlidingWindowLog,
     InMemoryTokenBucket,
+    RedisFixedWindow,
     RedisSlidingWindowLog,
     RedisTokenBucket,
     SlidingWindowConfig,
@@ -15,9 +18,7 @@ from qulf.rate_limit import (
 )
 
 
-# ==========================================
-# 1. Configuration Tests
-# ==========================================
+# Configuration Tests
 def test_token_bucket_config_validation() -> None:
     # Valid config
     config = TokenBucketConfig(capacity=10, refill_rate=2.5, max_memory_keys=100)
@@ -28,9 +29,9 @@ def test_token_bucket_config_validation() -> None:
         TokenBucketConfig(capacity=-5, refill_rate=1.0)  # capacity must be > 0
 
 
-# ==========================================
-# 2. In-Memory Token Bucket Tests
-# ==========================================
+# In-Memory Token Bucket Tests
+
+
 @pytest.mark.asyncio
 async def test_in_memory_tb_basic_and_reset_math() -> None:
     config = TokenBucketConfig(capacity=3, refill_rate=1.0)
@@ -112,9 +113,7 @@ async def test_in_memory_tb_concurrency() -> None:
     assert successes == 50
 
 
-# ==========================================
-# 3. Redis Token Bucket Tests
-# ==========================================
+# Redis Token Bucket Tests
 @pytest_asyncio.fixture
 async def fake_redis() -> Any:
     from fakeredis.aioredis import FakeRedis
@@ -158,9 +157,7 @@ def test_sliding_window_config_validation() -> None:
         SlidingWindowConfig(max_requests=0, window_seconds=10.0)
 
 
-# ==========================================
-# 5. In-Memory Sliding Window Tests
-# ==========================================
+# In-Memory Sliding Window Tests
 @pytest.mark.asyncio
 async def test_in_memory_swl_basic() -> None:
     config = SlidingWindowConfig(max_requests=3, window_seconds=1.0)
@@ -210,9 +207,7 @@ async def test_in_memory_swl_concurrency() -> None:
     assert sum(1 for r in results if r) == 50
 
 
-# ==========================================
-# 6. Redis Sliding Window Tests
-# ==========================================
+# Redis Sliding Window Tests
 @pytest.mark.asyncio
 async def test_redis_swl_basic(fake_redis: Any) -> None:
     config = SlidingWindowConfig(max_requests=2, window_seconds=5.0)
@@ -236,3 +231,59 @@ async def test_redis_swl_concurrency(fake_redis: Any) -> None:
 
     results = await asyncio.gather(*(try_consume() for _ in range(100)))
     assert sum(1 for r in results if r) == 50
+
+
+# Fixed Window Configuration Tests
+def test_fixed_window_config_validation() -> None:
+    config = FixedWindowConfig(max_requests=100, window_seconds=60)
+    assert config.max_requests == 100
+
+    with pytest.raises(ValidationError):
+        FixedWindowConfig(max_requests=-1, window_seconds=60)
+
+
+# In-Memory Fixed Window Tests
+@pytest.mark.asyncio
+async def test_in_memory_fw_basic() -> None:
+    config = FixedWindowConfig(max_requests=2, window_seconds=5)
+    limiter = InMemoryFixedWindow(config)
+
+    assert (await limiter.consume("fw_user")).allowed is True
+    assert (await limiter.consume("fw_user")).allowed is True
+
+    reject = await limiter.consume("fw_user")
+    assert reject.allowed is False
+    assert reject.remaining == 0
+
+
+@pytest.mark.asyncio
+async def test_in_memory_fw_pruning() -> None:
+    config = FixedWindowConfig(max_requests=5, window_seconds=10, max_memory_keys=2)
+    limiter = InMemoryFixedWindow(config)
+
+    # Fake window starts to simulate passage of time
+    await limiter._get_window("user1", 1000.0)
+    await limiter._get_window("user2", 1000.0)
+
+    # Hitting max memory triggers prune for the new current window start (2000.0)
+    await limiter._get_window("user3", 2000.0)
+
+    assert "user1" not in limiter._windows
+    assert "user2" not in limiter._windows
+    assert "user3" in limiter._windows
+
+
+# Redis Fixed Window Tests
+@pytest.mark.asyncio
+async def test_redis_fw_basic(fake_redis: Any) -> None:
+    config = FixedWindowConfig(max_requests=3, window_seconds=10)
+    limiter = RedisFixedWindow(fake_redis, config)
+
+    for expected_rem in [2, 1, 0]:
+        res = await limiter.consume("redis_fw")
+        assert res.allowed is True
+        assert res.remaining == expected_rem
+
+    res_reject = await limiter.consume("redis_fw")
+    assert res_reject.allowed is False
+    assert res_reject.reset_in > 0

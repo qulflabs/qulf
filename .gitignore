@@ -10,3 +10,4 @@ junit.xml
 skills-lock.json
 *.db
 dist/
+bin/act

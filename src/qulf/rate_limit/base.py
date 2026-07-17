@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 class RateLimitResult(BaseModel):
     """Structured result returned by any rate limiter in Qulf."""
+
     allowed: bool
     remaining: int
     reset_in: float

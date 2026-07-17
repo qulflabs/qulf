@@ -4,8 +4,8 @@ from qulf.providers.google import GoogleProvider
 
 __all__ = [
     "BaseOAuthProvider",
-    "OAuthTokenResponse",
-    "OAuthUserProfile",
     "GitHubProvider",
     "GoogleProvider",
+    "OAuthTokenResponse",
+    "OAuthUserProfile",
 ]

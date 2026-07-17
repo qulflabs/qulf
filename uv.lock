@@ -1547,6 +1547,7 @@ sqlmodel = [
     { name = "sqlmodel" },
 ]
 test = [
+    { name = "coverage" },
     { name = "httpx" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -1569,6 +1570,7 @@ dev = [
 requires-dist = [
     { name = "argon2-cffi", specifier = ">=25.1.0" },
     { name = "brevo-python", specifier = ">=4.0.10" },
+    { name = "coverage", marker = "extra == 'test'" },
     { name = "fastapi", specifier = ">=0.136.3" },
     { name = "httpx", marker = "extra == 'test'", specifier = ">=0.28,<1" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.8.0" },

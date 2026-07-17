@@ -158,3 +158,19 @@ async def sqlite_adapter():
 
     session_maker = async_sessionmaker(engine, expire_on_commit=False)
     return SQLAlchemyAdapter(session_maker)
+
+
+@pytest_asyncio.fixture
+async def sqlmodel_adapter():
+    from sqlmodel import SQLModel
+
+    from qulf.adapters.sqlmodel import SQLModelAdapter
+    
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+
+    # Create the tables
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+
+    session_maker = async_sessionmaker(engine, expire_on_commit=False)
+    return SQLModelAdapter(session_maker)

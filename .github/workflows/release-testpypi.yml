@@ -23,7 +23,7 @@ jobs:
       url: https://test.pypi.org/p/qulf
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           sparse-checkout: |
             .github
@@ -38,7 +38,7 @@ jobs:
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@f98e06938123ccabd21905ea5d0069192241f9f1
         with:
           enable-cache: true
 

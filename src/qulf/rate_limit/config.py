@@ -21,3 +21,14 @@ class SlidingWindowConfig(BaseModel):
     )
     max_memory_keys: int = Field(10000, description="Max IPs/Keys to store in memory")
     key_prefix: str = Field("qulf:ratelimit:swl:", description="Redis key prefix")
+
+
+class FixedWindowConfig(BaseModel):
+    max_requests: int = Field(
+        ..., gt=0, description="Max allowed requests in the window"
+    )
+    window_seconds: int = Field(
+        ..., gt=0, description="Size of the fixed window in seconds"
+    )
+    max_memory_keys: int = Field(10000, description="Max IPs/Keys to store in memory")
+    key_prefix: str = Field("qulf:ratelimit:fw:", description="Redis key prefix")

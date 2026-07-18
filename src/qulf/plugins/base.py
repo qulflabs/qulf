@@ -25,7 +25,7 @@ class QulfPlugin:
         """Fail fast if not initialized, but provide strict types to the IDE!"""
         if not self._auth:
             raise ConfigurationError(
-                f"Plugin {self.name} has not been initialized by Qulf."
+                f"Plugin `{self.name}` has not been initialized by Qulf."
             )
         return self._auth
 

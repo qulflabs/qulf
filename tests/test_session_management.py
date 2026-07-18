@@ -103,3 +103,20 @@ async def test_session_management_routes(memory_db):
 
     res_revoke_all_unauth = client.post("/session/revoke-all")
     assert res_revoke_all_unauth.status_code == 401, res_revoke_all_unauth.json()
+
+    client.cookies.set(config.cookies.name, "this_is_a_fake_and_invalid_token")
+
+    # Hits Line 25
+    res_list_invalid = client.get("/session/list")
+    assert res_list_invalid.status_code == 401
+    assert res_list_invalid.json() == {"detail": "Invalid or expired session."}
+
+    # Hits Line 50
+    res_revoke_invalid = client.post("/session/revoke", json={"token": session1.token})
+    assert res_revoke_invalid.status_code == 401
+    assert res_revoke_invalid.json() == {"detail": "Invalid or expired session."}
+
+    # Hits Line 86
+    res_revoke_all_invalid = client.post("/session/revoke-all")
+    assert res_revoke_all_invalid.status_code == 401
+    assert res_revoke_all_invalid.json() == {"detail": "Invalid or expired session."}

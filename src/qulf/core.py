@@ -66,7 +66,7 @@ class Qulf:
         # specific name is requested, do an O(1) lookup
         if name:
             plugin = self.plugins.get(name)
-            # CRITICAL: Verify the type so Pyright's promise holds true at runtime!
+            # Verify the type
             if isinstance(plugin, plugin_class):
                 return plugin
             return None

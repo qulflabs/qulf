@@ -75,7 +75,7 @@ class DatabaseAdapter(ABC):
     @abstractmethod
     async def get_user_sessions(self, user_id: str | int) -> list[Session]:
         """Fetch all active sessions for a specific user."""
-        pass
+        pass  # pragma: no cover
 
     @abstractmethod
     async def delete_user_session(
@@ -86,7 +86,7 @@ class DatabaseAdapter(ABC):
 
         return bool
         """
-        pass
+        pass  # pragma: no cover
 
     @abstractmethod
     async def delete_all_user_sessions(
@@ -98,7 +98,7 @@ class DatabaseAdapter(ABC):
 
         return a list of ID's of the deleted instances
         """
-        pass
+        pass  # pragma: no cover
 
     @abstractmethod
     async def create_account(self, account_data: AccountCreate) -> Account:

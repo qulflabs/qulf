@@ -299,21 +299,18 @@ class SQLAlchemyAdapter(DatabaseAdapter):
         self, user_id: str | int, except_token: str | None = None
     ) -> list[str]:
         async with self.session_maker() as session:
-            delete_stmt = delete(self.session_model).where(
+            stmt = delete(self.session_model).where(
                 self.session_model.user_id == user_id
             )
 
             if except_token is not None:
-                where_stmt = delete_stmt.where(self.session_model.token != except_token)
+                stmt = stmt.where(self.session_model.token != except_token)
+            final_stmt = stmt.returning(self.session_model.token)
 
-            stmt = where_stmt.returning(self.session_model.token)
-
-            result = await session.execute(stmt)
+            result = await session.execute(final_stmt)
             await session.commit()
 
-            deleted_tokens = list(result.scalars().all())
-
-            return deleted_tokens
+            return list(result.scalars().all())
 
     async def create_account(self, account_data: AccountCreate) -> QulfAccountType:
         async with self.session_maker() as session:

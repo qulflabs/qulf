@@ -12,9 +12,6 @@ class OAuthPlugin(QulfPlugin):
     name = "oauth"
 
     def get_routes(self) -> list[QulfRoute]:
-        if not self.auth:
-            return []
-
         async def login(request: QulfRequest) -> QulfResponse:
             provider_id = request.path_params.get("provider")
             provider = next(

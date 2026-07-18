@@ -6,7 +6,6 @@ import jwt
 
 from qulf.crypto import hash_password
 from qulf.exceptions import (
-    ConfigurationError,
     InvalidTokenError,
     QulfException,
     SessionExpiredError,
@@ -39,10 +38,6 @@ class MagicLinkPlugin(QulfPlugin):
         **Generates a stateless JWT token and passes it
         to the user-supplied dispatch handler.**
         """
-        if not self.auth:
-            raise ConfigurationError(
-                "MagicLinkPlugin has not been initialized by Qulf."
-            )
         payload = {
             "email": email,
             "exp": datetime.now(timezone.utc)
@@ -61,11 +56,6 @@ class MagicLinkPlugin(QulfPlugin):
         Creates the user profile if it doesn't exist yet
         it initiates a standard session.
         """
-        if not self.auth:
-            raise ConfigurationError(
-                "MagicLinkPlugin has not been initialized by Qulf."
-            )
-
         try:
             payload = jwt.decode(
                 token, self.auth.config.secret_key, algorithms=["HS256"]
@@ -103,9 +93,6 @@ class MagicLinkPlugin(QulfPlugin):
 
     def get_routes(self) -> list[QulfRoute]:
         """Expose framework-agnostic routes for the Magic Link flow."""
-
-        if not self.auth:
-            return []
 
         async def send_magic_link(request: QulfRequest) -> QulfResponse:
             email = request.body.get("email")

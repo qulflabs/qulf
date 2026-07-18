@@ -70,7 +70,7 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Sync test dependencies
-        run: uv sync --extra test
+        run: uv sync --all-extras
 
       - name: Run Pytest
         env:

@@ -59,11 +59,8 @@ class InMemorySlidingWindowLog(BaseRateLimiter):
             if current_count < self.config.max_requests:
                 window.timestamps.append(now)
                 remaining -= 1
-                reset_in = (
-                    (window.timestamps[0] + self.config.window_seconds - now)
-                    if window.timestamps
-                    else self.config.window_seconds
-                )
+                reset_in = window.timestamps[0] + self.config.window_seconds - now
+
                 return RateLimitResult(
                     allowed=True, remaining=remaining, reset_in=reset_in
                 )

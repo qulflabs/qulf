@@ -240,3 +240,42 @@ async def test_jwt_session_strategy(memory_db):
             await auth.get_session_from_cookies({auth.config.cookies.name: "fake"})
             is None
         )
+
+def test_get_plugin_registry(memory_db):
+    """Test the generic get_plugin method for type safety and resolution."""
+    from qulf.plugins.base import QulfPlugin
+
+    class DummyPluginA(QulfPlugin):
+        name = "dummy_a"
+
+    class DummyPluginB(QulfPlugin):
+        name = "dummy_b"
+        
+    class UnregisteredPlugin(QulfPlugin):
+        name = "unregistered"
+
+    plugin_a = DummyPluginA()
+    plugin_b = DummyPluginB()
+    
+    auth = Qulf(db=memory_db, plugins=[plugin_a, plugin_b])
+    
+    # TEST 1: O(N) Fallback scan by class type
+    res1 = auth.get_plugin(DummyPluginA)
+    assert res1 is plugin_a
+    
+    # TEST 2: O(1) Exact lookup by name
+    res2 = auth.get_plugin(DummyPluginB, name="dummy_b")
+    assert res2 is plugin_b
+    
+    # TEST 3: Type Mismatch Safety
+    # (Asking for Plugin B, but the name "dummy_a" points to Plugin A)
+    res3 = auth.get_plugin(DummyPluginB, name="dummy_a")
+    assert res3 is None
+    
+    # TEST 4: Plugin not registered
+    res4 = auth.get_plugin(UnregisteredPlugin)
+    assert res4 is None
+    
+    # TEST 5: Name not found
+    res5 = auth.get_plugin(DummyPluginA, name="does_not_exist")
+    assert res5 is None

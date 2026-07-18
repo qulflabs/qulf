@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from typing import TypeVar
 
 import jwt
 
@@ -13,6 +14,7 @@ from qulf.exceptions import (
 from qulf.plugins import QulfPlugin
 from qulf.types import Session, User, UserCreate
 
+TPlugin = TypeVar("TPlugin", bound=QulfPlugin)
 
 class Qulf:
     """
@@ -52,7 +54,30 @@ class Qulf:
         # Pass the dictionary to the database adapter
         if hasattr(self.db, "inject_custom_columns"):
             self.db.inject_custom_columns(aggregated_columns)
+            
+    def get_plugin(
+        self, plugin_class: type[TPlugin], name: str | None = None
+    ) -> TPlugin | None:
+        """
+        Safely retrieves a registered plugin by its class type.
+        If multiple instances of the same plugin exist, `name` can be provided 
+        to target a specific instance natively.
+        """
+        # specific name is requested, do an O(1) lookup
+        if name:
+            plugin = self.plugins.get(name)
+            # Verify the type
+            if isinstance(plugin, plugin_class):
+                return plugin
+            return None
 
+        # O(N) scan to find the first matching instance
+        for plugin in self.plugins.values():
+            if isinstance(plugin, plugin_class):
+                return plugin
+                
+        return None
+    
     async def sign_up(self, user_data: UserCreate) -> User:
         """
         Creates a new user profile inside the database.

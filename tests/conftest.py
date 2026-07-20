@@ -178,3 +178,15 @@ async def sqlmodel_adapter():
     yield SQLModelAdapter(session_maker)
 
     await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def motor_adapter():
+    import mongomock_motor
+
+    from qulf.adapters.motor import MotorAdapter
+
+    client = mongomock_motor.AsyncMongoMockClient()
+    db = client["qulf_test"]
+    yield MotorAdapter(db)
+    client.close()

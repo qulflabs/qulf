@@ -109,10 +109,11 @@ def serve_qulf(auth: Qulf) -> APIRouter:
 
                 return dynamic_endpoint
 
+            methods = [method.value for method in qulf_route.methods]
             router.add_api_route(
                 path=qulf_route.path,
                 endpoint=make_endpoint(qulf_route.handler),
-                methods=qulf_route.methods,
+                methods=methods,
             )
 
     return router

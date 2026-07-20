@@ -33,6 +33,7 @@ django = [
 litestar = ["litestar>=2.0.0"]
 redis = ["redis>=5.0.0"]
 sqlmodel = ["sqlmodel>=0.0.21"]
+motor = ["motor>=3.0"]
 test = [
   "pytest>=8.0.0",
   "pytest-cov>=4.1.0",
@@ -64,8 +65,12 @@ testpaths = ["tests"]
 dev = [
   "aiosqlite>=0.22.1",
   "commitizen>=4.16.4",
+  "django>=4.2",
+  "django-stubs>=5.2",
   "fakeredis[lua]>=2.20.0",
   "httpx>=0.28.1",
+  "mongomock-motor>=0.0.21",
+  "motor>=3.0",
   "pre-commit>=4.6.0",
   "redis>=5.0.0",
   "respx>=0.23.1",

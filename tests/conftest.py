@@ -50,13 +50,12 @@ class MemoryAdapter(DatabaseAdapter):
         return User.model_validate(new_user, from_attributes=True)
 
     async def update_user(self, user_id: str | int, update_data: dict) -> User:
-
         user = self.users.get(str(user_id))
         if not user:
             raise ValueError("User not found")
 
         for key, value in update_data.items():
-            # Because we set extra="allow" on CoreModel, we can just use setattr
+            # we set extra="allow" on CoreModel, we can just use setattr
             setattr(user, key, value)
 
         return User.model_validate(user, from_attributes=True)

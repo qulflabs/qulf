@@ -106,7 +106,6 @@ async def test_session_validation_and_signout(memory_db):
 
 @pytest.mark.asyncio
 async def test_expired_session(auth, memory_db):
-
     from qulf.types import UserCreate
 
     # 1. Sign up and sign in a test user

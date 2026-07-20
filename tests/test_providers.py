@@ -36,7 +36,6 @@ class MockOAuthProvider(BaseOAuthProvider):
 
 
 def test_base_oauth_provider_cannot_be_instantiated() -> None:
-
     with pytest.raises(TypeError):
         BaseOAuthProvider(  # type: ignore[abstract]
             client_id="id", client_secret="secret", redirect_uri="http://localhost"

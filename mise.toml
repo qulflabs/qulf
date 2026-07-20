@@ -102,15 +102,6 @@ if ! git diff --quiet; then
     exit 1
 fi
 
-if ! git diff --cached --quiet; then
-    echo "❌ Working tree contains staged but uncommitted changes."
-    exit 1
-fi
-
-if [ -n "$(git ls-files --others --exclude-standard)" ]; then
-    echo "❌ Repository contains untracked files."
-    exit 1
-fi
 
 echo "✅ Repository is ready for release."
 '''

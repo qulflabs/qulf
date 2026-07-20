@@ -9,15 +9,6 @@ resolution-markers = [
 ]
 
 [[package]]
-name = "aiosqlite"
-version = "0.22.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/4e/8a/64761f4005f17809769d23e518d915db74e6310474e733e3593cfc854ef1/aiosqlite-0.22.1.tar.gz", hash = "sha256:043e0bd78d32888c0a9ca90fc788b38796843360c855a7262a532813133a0650", size = 14821, upload-time = "2025-12-23T19:25:43.997Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/00/b7/e3bf5133d697a08128598c8d0abc5e16377b51465a33756de24fa7dee953/aiosqlite-0.22.1-py3-none-any.whl", hash = "sha256:21c002eb13823fad740196c5a2e9d8e62f6243bd9e7e4a1f87fb5e44ecb4fceb", size = 17405, upload-time = "2025-12-23T19:25:42.139Z" },
-]
-
-[[package]]
 name = "annotated-doc"
 version = "0.0.4"
 source = { registry = "https://pypi.org/simple" }
@@ -175,21 +166,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/8e/ff/70dca7d7cb1cbc0edb2c6cc0c38b65cba36cccc491eca64cabd5fe7f8670/backports_asyncio_runner-1.2.0.tar.gz", hash = "sha256:a5aa7b2b7d8f8bfcaa2b57313f70792df84e32a2a746f585213373f900b42162", size = 69893, upload-time = "2025-07-02T02:27:15.685Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a0/59/76ab57e3fe74484f48a53f8e337171b4a2349e506eabe136d7e01d059086/backports_asyncio_runner-1.2.0-py3-none-any.whl", hash = "sha256:0da0a936a8aeb554eccb426dc55af3ba63bcdc69fa1a600b5bb305413a4477b5", size = 12313, upload-time = "2025-07-02T02:27:14.263Z" },
-]
-
-[[package]]
-name = "brevo-python"
-version = "5.0.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "httpx" },
-    { name = "pydantic" },
-    { name = "pydantic-core" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/89/be/ead88c848c0fadc8f3446f4665c6c504e0ecfe8b83d3d84820f1f60aca5c/brevo_python-5.0.1.tar.gz", hash = "sha256:c8f5e3def406395d1c91788ce7df07021564fd89c87d4c9b73b15671df974aec", size = 501736, upload-time = "2026-07-03T12:34:51.854Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/48/78/e9aca70170038e4e383c387f35ff2e257862ce1664dbfe4f7b443bce0042/brevo_python-5.0.1-py3-none-any.whl", hash = "sha256:ab223365f454570f5f5b32c7cbac4291cfdd5d430cb5239878c507e6ae4d26bd", size = 978418, upload-time = "2026-07-03T12:34:50.584Z" },
 ]
 
 [[package]]
@@ -2006,26 +1982,20 @@ version = "0.1.0b2"
 source = { editable = "." }
 dependencies = [
     { name = "argon2-cffi" },
-    { name = "brevo-python" },
-    { name = "fastapi" },
     { name = "pydantic", extra = ["email", "timezone"] },
     { name = "pydantic-settings" },
     { name = "pyjwt" },
     { name = "pyotp" },
     { name = "python-settings" },
-    { name = "sqlalchemy" },
-    { name = "uvicorn" },
 ]
 
 [package.optional-dependencies]
-dev = [
-    { name = "mypy" },
-    { name = "ruff" },
-]
 django = [
     { name = "django", version = "5.2.16", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "django", version = "6.0.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "django-stubs" },
+]
+fastapi = [
+    { name = "fastapi" },
 ]
 litestar = [
     { name = "litestar" },
@@ -2039,73 +2009,65 @@ redis = [
 sqlmodel = [
     { name = "sqlmodel" },
 ]
-test = [
-    { name = "coverage" },
-    { name = "httpx" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-]
 
 [package.dev-dependencies]
 dev = [
-    { name = "aiosqlite" },
     { name = "commitizen" },
     { name = "django", version = "5.2.16", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "django", version = "6.0.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "django-stubs" },
     { name = "fakeredis", extra = ["lua"] },
+    { name = "fastapi" },
     { name = "httpx" },
+    { name = "litestar" },
     { name = "mongomock-motor" },
     { name = "motor" },
+    { name = "mypy" },
     { name = "pre-commit" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
     { name = "redis" },
-    { name = "respx" },
+    { name = "ruff" },
     { name = "sqlmodel" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "argon2-cffi", specifier = ">=25.1.0" },
-    { name = "brevo-python", specifier = ">=4.0.10" },
-    { name = "coverage", marker = "extra == 'test'" },
     { name = "django", marker = "extra == 'django'", specifier = ">=4.2" },
-    { name = "django-stubs", marker = "extra == 'django'", specifier = ">=5.2" },
-    { name = "fastapi", specifier = ">=0.136.3" },
-    { name = "httpx", marker = "extra == 'test'", specifier = ">=0.28,<1" },
+    { name = "fastapi", marker = "extra == 'fastapi'", specifier = ">=0.136.3" },
     { name = "litestar", marker = "extra == 'litestar'", specifier = ">=2.0.0" },
     { name = "motor", marker = "extra == 'motor'", specifier = ">=3.0" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.8.0" },
     { name = "pydantic", extras = ["email", "timezone"], specifier = ">=2.13.4" },
     { name = "pydantic-settings", specifier = ">=2.14.1" },
     { name = "pyjwt", specifier = ">=2.13.0" },
     { name = "pyotp", specifier = ">=2.10.0" },
-    { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0.0" },
-    { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.23.0" },
-    { name = "pytest-cov", marker = "extra == 'test'", specifier = ">=4.1.0" },
     { name = "python-settings", specifier = ">=0.2.3" },
     { name = "redis", marker = "extra == 'redis'", specifier = ">=5.0.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.3.0" },
-    { name = "sqlalchemy", specifier = ">=2.0.49" },
     { name = "sqlmodel", marker = "extra == 'sqlmodel'", specifier = ">=0.0.21" },
-    { name = "uvicorn", specifier = ">=0.48.0" },
 ]
-provides-extras = ["dev", "redis", "sqlmodel", "django", "motor", "litestar", "test"]
+provides-extras = ["django", "fastapi", "litestar", "motor", "redis", "sqlmodel"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "aiosqlite", specifier = ">=0.22.1" },
-    { name = "commitizen", specifier = ">=4.16.4" },
-    { name = "django", specifier = ">=4.2" },
-    { name = "django-stubs", specifier = ">=5.2" },
-    { name = "fakeredis", extras = ["lua"], specifier = ">=2.20.0" },
-    { name = "httpx", specifier = ">=0.28.1" },
-    { name = "mongomock-motor", specifier = ">=0.0.21" },
-    { name = "motor", specifier = ">=3.0" },
-    { name = "pre-commit", specifier = ">=4.6.0" },
-    { name = "redis", specifier = ">=5.0.0" },
-    { name = "respx", specifier = ">=0.23.1" },
-    { name = "sqlmodel", specifier = ">=0.0.21" },
+    { name = "commitizen" },
+    { name = "django" },
+    { name = "django-stubs" },
+    { name = "fakeredis", extras = ["lua"] },
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "litestar" },
+    { name = "mongomock-motor" },
+    { name = "motor" },
+    { name = "mypy" },
+    { name = "pre-commit" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "redis" },
+    { name = "ruff" },
+    { name = "sqlmodel" },
 ]
 
 [[package]]
@@ -2118,18 +2080,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/cc/c3/928b290c2c0ca99ab96eea5b4ff8f30be8112b075301a7d3ba214a3c8c12/redis-8.0.1.tar.gz", hash = "sha256:afc5a7a2f5a084f5b1880dec548dd45be17db7e43c82a30d84f952aefb05cfb0", size = 5114170, upload-time = "2026-06-23T14:52:37.728Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fd/0a/c2345ebf1ebe70840ce3f6c6ee612f8fa749cfbd1b03069c53bf0c62aaad/redis-8.0.1-py3-none-any.whl", hash = "sha256:47daa35a058c23468d6437f17a8c76882cb316b838ef763036af99b96cedd743", size = 502406, upload-time = "2026-06-23T14:52:36.137Z" },
-]
-
-[[package]]
-name = "respx"
-version = "0.23.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "httpx" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/43/98/4e55c9c486404ec12373708d015ebce157966965a5ebe7f28ff2c784d41b/respx-0.23.1.tar.gz", hash = "sha256:242dcc6ce6b5b9bf621f5870c82a63997e8e82bc7c947f9ffe272b8f3dd5a780", size = 29243, upload-time = "2026-04-08T14:37:16.008Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/1d/4a/221da6ca167db45693d8d26c7dc79ccfc978a440251bf6721c9aaf251ac0/respx-0.23.1-py2.py3-none-any.whl", hash = "sha256:b18004b029935384bccfa6d7d9d74b4ec9af73a081cc28600fffc0447f4b8c1a", size = 25557, upload-time = "2026-04-08T14:37:14.613Z" },
 ]
 
 [[package]]
@@ -2412,20 +2362,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/92/ff/5a28bdfd8c3ebec42564ac7d0e54ca3db65044a9314a97f9564fa7a1e926/tzdata-2026.3.tar.gz", hash = "sha256:4a1518b8993086a7982523e071643f3c0e5f213e75b21318e78bcabfff9d1415", size = 198674, upload-time = "2026-07-10T08:50:37.887Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e5/6d/b53b99a9f2766d095985947a5782f1702cabb129a34f7a802d7197af832f/tzdata-2026.3-py2.py3-none-any.whl", hash = "sha256:dc096730c87af6cab1b171c9d532be840741ff5d459015e7f6947bd7d7e54931", size = 348168, upload-time = "2026-07-10T08:50:36.46Z" },
-]
-
-[[package]]
-name = "uvicorn"
-version = "0.51.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "click" },
-    { name = "h11" },
-    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/a2/65/b7c6c443ccc58678c91e1e973bbe2a878591538655d6e1d47f24ba1c51f3/uvicorn-0.51.0.tar.gz", hash = "sha256:f6f4b69b657c312f516dd2d268ab9ae6f254b11e4bac504f37b2ab58b24dd0b0", size = 94412, upload-time = "2026-07-08T10:59:05.962Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/45/ec/dbb7e5a6b91f86bfb9eb7d2988a2730907b6a729875b949c7f022e8b88fa/uvicorn-0.51.0-py3-none-any.whl", hash = "sha256:5d38af6cd620f2ae3849fb44fd4879e0890aa1febe8d47eb355fb45d93fe6a5b", size = 73219, upload-time = "2026-07-08T10:59:04.44Z" },
 ]
 
 [[package]]

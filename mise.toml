@@ -13,8 +13,7 @@ _.file = ".env"
 description = "Set up the virtual environment and install dependencies"
 run = """
 uv venv --allow-existing
-uv sync
-uv pip install -e ".[dev,test,redis]"
+uv sync --all-extras
 """
 
 [tasks.format]
@@ -35,7 +34,14 @@ uv run mypy src/
 depends = ["setup"]
 description = "Run the test suite with pytest"
 run = """
-uv run pytest tests/ -v --cov --junitxml=junit.xml -o junit_family=legacy
+uv run pytest tests/ -v --cov
+"""
+
+[tasks."tests:cov"]
+depends = ["setup"]
+description = "Run the test suite with pytest"
+run = """
+uv run pytest --cov=qulf --cov-report=term-missing
 """
 
 [tasks.cln]

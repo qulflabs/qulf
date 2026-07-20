@@ -33,6 +33,7 @@ django = [
     "django-stubs>=5.2",
 ]
 motor = ["motor>=3.0"]
+litestar = ["litestar>=2.0.0"]
 test = [
   "pytest>=8.0.0",
   "pytest-cov>=4.1.0",
@@ -55,10 +56,10 @@ strict = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests"]
 filterwarnings = [
   "default",
 ]
+testpaths = ["tests"]
 
 [dependency-groups]
 dev = [

@@ -1,12 +1,26 @@
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
+from enum import Enum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
 
+class HttpMethod(str, Enum):
+    """An Enum for HTTP methods."""
+
+    DELETE = "DELETE"
+    GET = "GET"
+    HEAD = "HEAD"
+    OPTIONS = "OPTIONS"
+    PATCH = "PATCH"
+    POST = "POST"
+    PUT = "PUT"
+    TRACE = "TRACE"
+
+
 class QulfRequest(BaseModel):
     """
-    **An agnostic HTTP response.**
+    **An agnostic HTTP request.**
     """
 
     body: dict[str, Any] = {}
@@ -45,7 +59,7 @@ class QulfRoute(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     path: str
-    methods: list[str]
+    methods: Sequence[HttpMethod]
     # The handler must be an async function that takes a
     # QulfRequest and returns a QulfResponse
     handler: Callable[[QulfRequest], Awaitable[QulfResponse]]

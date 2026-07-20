@@ -1,4 +1,4 @@
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from enum import Enum
 from typing import Any, Literal
 
@@ -59,7 +59,7 @@ class QulfRoute(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     path: str
-    methods: list[HttpMethod]
+    methods: Sequence[HttpMethod]
     # The handler must be an async function that takes a
     # QulfRequest and returns a QulfResponse
     handler: Callable[[QulfRequest], Awaitable[QulfResponse]]

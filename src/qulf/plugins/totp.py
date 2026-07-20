@@ -41,9 +41,6 @@ class TOTPPlugin(QulfPlugin):
         raise Requires2FAError(temp_token)
 
     def get_routes(self) -> list[QulfRoute]:
-        if not self.auth:
-            return []
-
         async def totp_setup(request: QulfRequest) -> QulfResponse:
             session_data = await self.auth.get_session_from_cookies(request.cookies)
             if not session_data:

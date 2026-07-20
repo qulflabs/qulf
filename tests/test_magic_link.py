@@ -30,7 +30,13 @@ def email_sender():
 @pytest.mark.asyncio
 async def test_uninitialized_plugin(email_sender):
     plugin = MagicLinkPlugin(send_email_func=email_sender.send)
-    with pytest.raises(ConfigurationError, match="not been initialized"):
+
+    # When these methods try to access `self.auth.config...`,
+    # the base class raises the error!
+    with pytest.raises(ConfigurationError, match="has not been initialized"):
+        await plugin.generate_and_send("test@test.com")
+
+    with pytest.raises(ConfigurationError, match="has not been initialized"):
         await plugin.verify_and_sign_in("some_token")
 
 
@@ -124,3 +130,13 @@ def test_magic_link_fastapi_routes(memory_db, email_sender):
     # 6. Test /verify with bad token
     res_bad = client.post("/magic-link/verify", json={"token": "garbage"})
     assert res_bad.status_code == 400
+
+    # 7. Test /send missing email branch (Coverage: Line 113)
+    res_send_no_email = client.post("/magic-link/send", json={})
+    assert res_send_no_email.status_code == 400
+    assert res_send_no_email.json() == {"detail": "Email is required"}
+
+    # 8. Test /verify missing token branch (Coverage: Line 123)
+    res_verify_no_token = client.post("/magic-link/verify", json={})
+    assert res_verify_no_token.status_code == 400
+    assert res_verify_no_token.json() == {"detail": "Token is required"}

@@ -12,9 +12,6 @@ class SessionManagementPlugin(QulfPlugin):
     name = "session_management"
 
     def get_routes(self) -> list[QulfRoute]:
-        if not self.auth:
-            return []
-
         async def list_sessions(request: QulfRequest) -> QulfResponse:
             """GET /session/list"""
             token = request.cookies.get(self.auth.config.cookies.name)
@@ -57,7 +54,6 @@ class SessionManagementPlugin(QulfPlugin):
             session, user = result
 
             try:
-                # Assuming request.json holds the parsed dict body.
                 body = RevokeSessionRequest.model_validate(request.body)
             except Exception as e:
                 return QulfResponse(

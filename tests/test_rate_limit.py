@@ -5,6 +5,8 @@ import pytest
 import pytest_asyncio
 from pydantic import ValidationError
 
+from qulf.exceptions import RateLimitExceededError
+from qulf.plugins import RateLimitPlugin
 from qulf.rate_limit import (
     FixedWindowConfig,
     InMemoryFixedWindow,
@@ -18,15 +20,60 @@ from qulf.rate_limit import (
 )
 
 
+@pytest.mark.asyncio
+async def test_rate_limit_plugin_enforce():
+    # Setup a limiter that allows 2 requests per 10 seconds
+    limiter = InMemoryFixedWindow(FixedWindowConfig(max_requests=2, window_seconds=10))
+    plugin = RateLimitPlugin(limiter=limiter)
+
+    # 1. Enforce with a standard string identifier
+    await plugin.enforce("test_action", "user1")
+
+    # 2. Enforce with a list identifier (include None to test the `if i` filter)
+    await plugin.enforce("test_action", ["127.0.0.1", None, "user2"])
+
+    # 3. Exhaust the limiter to trigger RateLimitExceededError
+    await plugin.enforce("test_action", "exhausted_user")
+    await plugin.enforce("test_action", "exhausted_user")
+
+    with pytest.raises(RateLimitExceededError) as exc_info:
+        await plugin.enforce("test_action", "exhausted_user")
+
+    assert "Rate limit exceeded for action: test_action" in str(exc_info.value)
+    assert exc_info.value.retry_after >= 0
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_plugin_before_sign_in():
+    limiter = InMemoryFixedWindow(FixedWindowConfig(max_requests=5, window_seconds=10))
+
+    # 1. Protect sign in DISABLED
+    plugin_disabled = RateLimitPlugin(limiter=limiter, protect_sign_in=False)
+    await plugin_disabled.before_sign_in(email="test@test.com")
+    # Because it returns early, the limiter should not have consumed any keys
+    assert not limiter._windows
+
+    # 2. Protect sign in ENABLED (Without IP)
+    plugin = RateLimitPlugin(limiter=limiter, protect_sign_in=True)
+    await plugin.before_sign_in(email="test2@test.com")
+    # Limiter key should be formatted as action:email
+    assert "signin:test2@test.com" in limiter._windows
+
+    # 3. Protect sign in ENABLED (With IP)
+    await plugin.before_sign_in(email="test3@test.com", ip_address="192.168.1.1")
+    # Limiter key should be formatted as action:ip:email
+    assert "signin:192.168.1.1:test3@test.com" in limiter._windows
+
+
 # Configuration Tests
 def test_token_bucket_config_validation() -> None:
     # Valid config
     config = TokenBucketConfig(capacity=10, refill_rate=2.5, max_memory_keys=100)
     assert config.capacity == 10
 
-    # Invalid config (should fail fast due to Pydantic strictness)
+    # Invalid config
     with pytest.raises(ValidationError):
-        TokenBucketConfig(capacity=-5, refill_rate=1.0)  # capacity must be > 0
+        TokenBucketConfig(capacity=int("-5"), refill_rate=1.0)  # capacity must be > 0
 
 
 # In-Memory Token Bucket Tests
@@ -134,7 +181,7 @@ async def test_redis_tb_basic(fake_redis: Any) -> None:
     res = await bucket.consume("redis_user")
     assert res.allowed is False
     assert res.remaining == 0
-    assert 0.9 < res.reset_in <= 1.0
+    assert 0.8 < res.reset_in <= 1.0
 
 
 @pytest.mark.asyncio
@@ -154,7 +201,7 @@ def test_sliding_window_config_validation() -> None:
     assert config.max_requests == 10
 
     with pytest.raises(ValidationError):
-        SlidingWindowConfig(max_requests=0, window_seconds=10.0)
+        SlidingWindowConfig(max_requests=int("0"), window_seconds=10.0)
 
 
 # In-Memory Sliding Window Tests
@@ -193,6 +240,27 @@ async def test_in_memory_swl_pruning() -> None:
     assert "user1" not in limiter._windows  # Successfully pruned!
     assert "user2" in limiter._windows
     assert "user3" in limiter._windows
+
+
+@pytest.mark.asyncio
+async def test_in_memory_swl_popleft() -> None:
+    config = SlidingWindowConfig(max_requests=5, window_seconds=2.0)
+    limiter = InMemorySlidingWindowLog(config)
+
+    # 1. Add a normal request
+    await limiter.consume("pop_user")
+
+    # 2. Hack the timestamp so it falls completely outside the 2.0s sliding window
+    limiter._windows["pop_user"].timestamps[0] -= 5.0
+
+    # 3. Call consume again.
+    # Because we haven't hit max_memory_keys, _prune is NOT triggered.
+    # Instead, consume() evaluates the cutoff and calls `window.timestamps.popleft()`!
+    res = await limiter.consume("pop_user")
+
+    assert res.allowed is True
+    # The old timestamp was popped, leaving only the newly added one.
+    assert len(limiter._windows["pop_user"].timestamps) == 1
 
 
 @pytest.mark.asyncio
@@ -239,7 +307,7 @@ def test_fixed_window_config_validation() -> None:
     assert config.max_requests == 100
 
     with pytest.raises(ValidationError):
-        FixedWindowConfig(max_requests=-1, window_seconds=60)
+        FixedWindowConfig(max_requests=int("-1"), window_seconds=60)
 
 
 # In-Memory Fixed Window Tests

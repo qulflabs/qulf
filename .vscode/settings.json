@@ -29,5 +29,6 @@
         "**/node_modules/**": true,
         "**/target/**": true
     },
-    "python.analysis.autoImportCompletions": true
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.typeCheckingMode": "standard"
 }

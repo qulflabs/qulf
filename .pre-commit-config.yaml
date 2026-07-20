@@ -14,6 +14,23 @@ repos:
 
   - repo: local
     hooks:
+      - id: uv-lock-check
+        name: Ensure uv.lock is up to date
+        entry: >
+          bash -c '
+            uv lock &&
+            if ! git diff --quiet uv.lock; then
+              echo "";
+              echo "❌ uv.lock is out of date.";
+              echo "Run:";
+              echo "  uv lock";
+              echo "  git add uv.lock";
+              exit 1;
+            fi
+          '
+        language: system
+        pass_filenames: false
+
       - id: mypy
         name: mypy
         entry: uv run mypy src/

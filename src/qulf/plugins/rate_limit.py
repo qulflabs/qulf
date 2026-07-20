@@ -1,3 +1,5 @@
+from typing import Sequence
+
 from qulf.exceptions import RateLimitExceededError
 from qulf.plugins.base import QulfPlugin
 from qulf.rate_limit.base import BaseRateLimiter
@@ -11,15 +13,15 @@ class RateLimitPlugin(QulfPlugin):
         self.protect_sign_in = protect_sign_in
 
     async def enforce(
-        self, action: str, identifier: str | list[str], tokens: int = 1
+        self, action: str, identifier: str | Sequence[str | None], tokens: int = 1
     ) -> None:
         """
         Generic method developers can call in ANY route to enforce rate limits.
         Accepts a string or a list of strings
         to create composite keys (e.g. ['ip', 'email']).
         """
-        if isinstance(identifier, list):
-            id_str = ":".join(str(i) for i in identifier if i)
+        if isinstance(identifier, (list, tuple)):
+            id_str = ":".join(i for i in identifier if i)
         else:
             id_str = identifier
 

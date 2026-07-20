@@ -203,9 +203,7 @@ class MotorAdapter(DatabaseAdapter):
         return self._to_account(doc)
 
     # Schema injection (no-op for MongoDB)
-    def inject_custom_columns(
-        self, custom_columns: dict[str, dict[str, type]]
-    ) -> None:
+    def inject_custom_columns(self, custom_columns: dict[str, dict[str, type]]) -> None:
         """
         No-op for MongoDB.
 

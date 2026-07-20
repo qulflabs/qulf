@@ -20,10 +20,10 @@ class RateLimitPlugin(QulfPlugin):
         Accepts a string or a list of strings
         to create composite keys (e.g. ['ip', 'email']).
         """
-        if isinstance(identifier, (list, tuple)):
-            id_str = ":".join(i for i in identifier if i)
-        else:
+        if isinstance(identifier, str):
             id_str = identifier
+        else:
+            id_str = ":".join(i for i in identifier if i)
 
         key = f"{action}:{id_str}"
         result = await self.limiter.consume(key, tokens=tokens)

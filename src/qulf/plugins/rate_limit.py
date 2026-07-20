@@ -1,4 +1,4 @@
-from typing import Sequence
+from collections.abc import Sequence
 
 from qulf.exceptions import RateLimitExceededError
 from qulf.plugins.base import QulfPlugin

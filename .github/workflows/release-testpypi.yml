@@ -52,12 +52,15 @@ jobs:
         run: uv build
 
       - name: Publish package distributions to TestPyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@v1.14.0
         with:
           repository-url: https://test.pypi.org/legacy/
 
-      - name: Create GitHub Pre-release
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Release
         uses: softprops/action-gh-release@v2
+        if: github.ref_type == 'tag'
         with:
           prerelease: true
           generate_release_notes: true

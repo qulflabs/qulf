@@ -51,10 +51,13 @@ jobs:
         run: uv build
 
       - name: Publish package distributions to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@v1.14.0
 
-      - name: Create GitHub Release
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Release
         uses: softprops/action-gh-release@v2
+        if: github.ref_type == 'tag'
         with:
           generate_release_notes: true
           files: |

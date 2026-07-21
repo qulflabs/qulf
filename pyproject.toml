@@ -66,6 +66,8 @@ dev = [
   "motor",
   "redis",
   "sqlmodel",
+  "respx>=0.23.1",
+  "faker>=40.31.0",
 ]
 
 [build-system]

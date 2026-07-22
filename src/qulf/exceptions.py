@@ -51,6 +51,17 @@ class UserNotFoundError(AuthenticationError):
     pass
 
 
+class UserAccountDeactivatedError(AuthenticationError):
+    """
+    Raised during sign-in if the email doesn't exist.
+
+    Maintained as a discrete exception internally, although framework adapters may merge
+    this with InvalidCredentialsError to prevent user enumeration.
+    """
+
+    pass
+
+
 class InvalidCredentialsError(AuthenticationError):
     """
     Raised during sign-in if the password does not match.

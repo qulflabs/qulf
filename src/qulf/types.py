@@ -26,7 +26,9 @@ class User(CoreModel):
     name: str
     email: EmailStr
     username: str
+    email_verified_at: datetime | None = None
     last_login: datetime | None = None
+    deleted_at: datetime | None = None
 
 
 class UserCreate(BaseModel):
@@ -59,6 +61,7 @@ class UserUpdate(BaseModel):
     id: int | str
     name: str
     email: EmailStr
+    email_verified_at: datetime | None = None
     username: str
 
 
@@ -82,6 +85,7 @@ class Session(CoreModel):
     token: str
     ip_address: str | None = None
     user_agent: str | None = None
+    deleted_at: datetime | None = None
 
 
 class AccountCreate(BaseModel):
@@ -104,4 +108,4 @@ class Account(CoreModel, AccountCreate):
     Standard representation of an OAuth account linked to a user.
     """
 
-    pass
+    deleted_at: datetime | None = None

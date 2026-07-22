@@ -3,19 +3,18 @@ import secrets
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
 
+# total coincidence :)
+ph = PasswordHasher()
 
-def generate_session_token() -> str:
+
+def generate_session_token(length: int = 32) -> str:
     """
     Generates a cryptographically secure random session token.
     """
     # 32 bytes (256 bits) of entropy prevents brute-force session guessing.
     # We use URL-safe encoding to guarantee compatibility when tokens are
     # placed in HTTP headers, cookies, or URL queries without escaping.
-    return secrets.token_urlsafe(32)
-
-
-# total coincidence :)
-ph = PasswordHasher()
+    return secrets.token_urlsafe(length)
 
 
 def hash_password(password: str) -> str:

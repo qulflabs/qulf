@@ -59,8 +59,7 @@ class EmailVerificationConfig(BaseModel):
     token_expires_in: timedelta = Field(default=timedelta(hours=24))
     require_for_sign_in: bool = Field(
         default=False,
-        description="If True, reject sign_in attempts "
-        "if User.email_verified is False.",
+        description="If True, reject sign_in attempts if User.email_verified is False.",
     )
 
 

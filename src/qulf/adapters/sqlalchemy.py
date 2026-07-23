@@ -154,17 +154,35 @@ class SQLAlchemyAdapter(DatabaseAdapter):
                     sa_type = type_mapping.get(col_type, String)
                     setattr(model, col_name, mapped_column(sa_type, nullable=True))
 
-    async def get_user_by_email(self, email: str) -> UserWithPassword | None:
-        # We retrieve short-lived sessions directly inside database operations to
-        # make sure connections are checked back into the pool as fast as possible
+    async def get_user_by_email_with_password(
+        self, email: str
+    ) -> UserWithPassword | None:
         async with self.session_maker() as session:
             stmt = select(self.user_model).where(self.user_model.email == email)
             result = await session.execute(stmt)
             db_user = result.scalar_one_or_none()
             if not db_user:
                 return None
-            # Enforcing from_attributes=True instructs Pydantic to read SQLAlchemy ORM
-            # properties as attributes (obj.field)
+            return UserWithPassword.model_validate(db_user, from_attributes=True)
+
+    async def get_user_by_email(self, email: str) -> QulfUserType | None:
+        async with self.session_maker() as session:
+            stmt = select(self.user_model).where(self.user_model.email == email)
+            result = await session.execute(stmt)
+            db_user = result.scalar_one_or_none()
+            if not db_user:
+                return None
+            return QulfUserType.model_validate(db_user, from_attributes=True)
+
+    async def get_user_by_id_with_password(
+        self, user_id: str | int
+    ) -> UserWithPassword | None:
+        async with self.session_maker() as session:
+            stmt = select(self.user_model).where(self.user_model.id == user_id)
+            result = await session.execute(stmt)
+            db_user = result.scalar_one_or_none()
+            if not db_user:
+                return None
             return UserWithPassword.model_validate(db_user, from_attributes=True)
 
     async def get_user_by_id(self, user_id: str | int) -> QulfUserType | None:

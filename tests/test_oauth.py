@@ -56,7 +56,7 @@ def test_oauth_plugin_fastapi_routes(memory_db):
     app.include_router(serve_qulf(auth))
     client = TestClient(app)
 
-    # TEST 1: LOGIN, Redirect
+    # LOGIN, Redirect
     res_login = client.get("/oauth/fake/login", follow_redirects=False)
     assert res_login.status_code == 302
     assert "https://fake.com/auth" in res_login.headers["location"]
@@ -68,7 +68,7 @@ def test_oauth_plugin_fastapi_routes(memory_db):
     state_from_url = location.split("state=")[1]
     assert state_cookie_val == state_from_url
 
-    # TEST 2: CALLBACK, Success
+    # CALLBACK, Success
     client.cookies.set("qulf_oauth_state_fake", state_cookie_val)
 
     res_callback = client.get(
@@ -80,7 +80,7 @@ def test_oauth_plugin_fastapi_routes(memory_db):
 
     assert not res_callback.cookies.get("qulf_oauth_state_fake")
 
-    # TEST 3: CALLBACK, CSRF Failure
+    # CALLBACK, CSRF Failure
     client.cookies.set("qulf_oauth_state_fake", "wrong_cookie_state")
     res_bad_csrf = client.get(
         f"/oauth/fake/callback?code=good_code&state={state_from_url}"

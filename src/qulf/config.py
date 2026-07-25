@@ -1,3 +1,4 @@
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from enum import Enum
 from typing import Any, Literal
@@ -79,6 +80,17 @@ class AccountDeletionConfig(BaseModel):
     )
 
 
+class EmailHooks(BaseModel):
+    """Hooks for the developer to inject their own email-sending logic."""
+
+    send_password_reset: Callable[[str, str], Awaitable[None]] | None = Field(
+        default=None, description="Async function taking (email, token)"
+    )
+    send_verification: Callable[[str, str], Awaitable[None]] | None = Field(
+        default=None, description="Async function taking (email, token)"
+    )
+
+
 class QulfConfig(BaseSettings):
     """Main Configuration for Qulf"""
 
@@ -104,6 +116,7 @@ class QulfConfig(BaseSettings):
     account_deletion: AccountDeletionConfig = Field(
         default_factory=AccountDeletionConfig
     )
+    email_hooks: EmailHooks = Field(default_factory=EmailHooks)
     oauth_providers: list[Any] = []
 
     model_config = SettingsConfigDict(

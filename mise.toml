@@ -106,37 +106,75 @@ fi
 echo "✅ Repository is ready for release."
 '''
 
-[tasks."bump:patch"]
-depends = ["check-release"]
-run = "uv run cz bump --increment PATCH"
-
-[tasks."bump:minor"]
-depends = ["check-release"]
-run = "uv run cz bump --increment MINOR"
-
-[tasks."bump:major"]
-depends = ["check-release"]
-run = "uv run cz bump --increment MAJOR"
-
-[tasks."bump:alpha"]
-depends = ["check-release"]
-run = "uv run cz bump --prerelease alpha"
-
-[tasks."bump:beta"]
-depends = ["check-release"]
-run = "uv run cz bump --prerelease beta"
-
-[tasks."bump:rc"]
-depends = ["check-release"]
-run = "uv run cz bump --prerelease rc"
 
 [tasks.release]
-depends = ["check-release"]
-description = "Push the latest release commit and tag"
-run = """
-git push
-git push --tags
-"""
+description = "Create and publish a release"
+
+usage = '''
+arg "<kind>" {
+  choices "alpha" "beta" "rc" "patch" "minor" "major"
+  help "Release type"
+}
+
+flag "--dry-run" {
+  help "Preview the release without making any changes"
+}
+'''
+
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo "❌ Error: Working tree is not clean."
+  git status --short
+  exit 1
+fi
+
+branch="$(git branch --show-current)"
+if [[ "$branch" != "main" ]]; then
+  echo "❌ Error: Releases must be created from 'main'."
+  exit 1
+fi
+
+git fetch origin
+
+local_sha="$(git rev-parse HEAD)"
+remote_sha="$(git rev-parse origin/main)"
+
+if [[ "$local_sha" != "$remote_sha" ]]; then
+  echo "❌ Error: Local 'main' is not in sync with 'origin/main'."
+  exit 1
+fi
+
+dry_run_args=()
+if [[ "$usage_dry_run" == "true" ]]; then
+  dry_run_args+=(--dry-run)
+  echo "🧪 Running in dry-run mode."
+fi
+
+echo "🚀 Preparing $usage_kind release..."
+
+case "$usage_kind" in
+  alpha) cz bump --prerelease alpha "${dry_run_args[@]}" ;;
+  beta)  cz bump --prerelease beta  "${dry_run_args[@]}" ;;
+  rc)    cz bump --prerelease rc    "${dry_run_args[@]}" ;;
+  patch) cz bump --increment PATCH  "${dry_run_args[@]}" ;;
+  minor) cz bump --increment MINOR  "${dry_run_args[@]}" ;;
+  major) cz bump --increment MAJOR  "${dry_run_args[@]}" ;;
+esac
+
+if [[ "$usage_dry_run" == "true" ]]; then
+  echo
+  echo "✅ Dry run complete."
+  exit 0
+fi
+
+git push origin main --follow-tags
+
+echo "✅ Release pushed successfully!"
+echo "GitHub Actions will now build, publish, and create the GitHub release."
+'''
 
 [tasks.test-wheel]
 description = "Test the built wheel in a clean environment"

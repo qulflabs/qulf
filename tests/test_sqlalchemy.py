@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from qulf.adapters.sqlalchemy import SQLAlchemyAdapter
+from qulf.config import DeletionStrategy
 from qulf.types import AccountCreate, UserCreate
 
 
@@ -23,7 +24,7 @@ async def test_sqlalchemy_adapter_flow(sqlite_adapter: SQLAlchemyAdapter):
 
     assert user.email == "db@test.com"
 
-    fetched_by_email = await adapter.get_user_by_email("db@test.com")
+    fetched_by_email = await adapter.get_user_by_email_with_password("db@test.com")
     assert fetched_by_email is not None
     assert fetched_by_email.hashed_password == "fake_hashed_password"
 
@@ -183,16 +184,52 @@ async def test_sqlalchemy_adapter_accounts(sqlite_adapter: SQLAlchemyAdapter):
         id_token="id_tok",
     )
 
-    # Create Account
     created_account = await sqlite_adapter.create_account(account_data)
     assert created_account.provider_id == "github"
     assert created_account.account_id == "gh_123"
 
-    # Fetch valid account
+    # valid account
     fetched = await sqlite_adapter.get_account_by_provider("github", "gh_123")
     assert fetched is not None
     assert fetched.user_id == user.id
 
-    # Fetch invalid account
+    # invalid account
     not_fetched = await sqlite_adapter.get_account_by_provider("github", "wrong_id")
     assert not_fetched is None
+
+
+@pytest.mark.asyncio
+async def test_sqlalchemy_hard_deletes_and_misses(sqlite_adapter: SQLAlchemyAdapter):
+    # Hard Delete
+    await sqlite_adapter.delete_user("fake-id", DeletionStrategy.HARD)
+    # misses returning None
+    assert (
+        await sqlite_adapter.get_user_by_email_with_password("nobody@nowhere.com")
+        is None
+    )
+    assert await sqlite_adapter.get_user_by_id_with_password("fake-id") is None
+
+    user = await sqlite_adapter.create_user(
+        UserCreate(
+            name="a",
+            email="soft@test.com",
+            username="softu",
+            password="p",
+            password_confirmation="p",
+        ),
+        "hashed",
+    )
+
+    u1 = await sqlite_adapter.get_user_by_id_with_password(str(user.id))
+    assert u1 is not None and u1.hashed_password == "hashed"
+
+    u2 = await sqlite_adapter.get_user_by_email_with_password("soft@test.com")
+    assert u2 is not None and u2.hashed_password == "hashed"
+
+    # the soft delete
+    await sqlite_adapter.delete_user(str(user.id), DeletionStrategy.SOFT)
+
+    # it soft deleted
+    deleted_user = await sqlite_adapter.get_user_by_id(str(user.id))
+    assert deleted_user is not None
+    assert deleted_user.deleted_at is not None

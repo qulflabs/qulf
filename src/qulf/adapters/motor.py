@@ -2,19 +2,15 @@ from datetime import datetime, timezone
 from typing import Any
 
 from bson import ObjectId
+from bson.errors import InvalidId
+from motor.motor_asyncio import AsyncIOMotorCollection, AsyncIOMotorDatabase
 
 from qulf.adapters.base import DatabaseAdapter
+from qulf.config import DeletionStrategy
 from qulf.types import Account as QulfAccountType
 from qulf.types import AccountCreate, UserCreate, UserWithPassword
 from qulf.types import Session as QulfSessionType
 from qulf.types import User as QulfUserType
-
-
-def _id_to_str(doc: dict[str, Any]) -> dict[str, Any]:
-    """Convert MongoDB's _id (ObjectId) to a string 'id' field."""
-    doc = dict(doc)
-    doc["id"] = str(doc.pop("_id"))
-    return doc
 
 
 class MotorAdapter(DatabaseAdapter):
@@ -36,42 +32,68 @@ class MotorAdapter(DatabaseAdapter):
         adapter = MotorAdapter(client["mydb"])
     """
 
-    def __init__(self, db: Any) -> None:
-        """
-        Args:
-            db: An ``AsyncIOMotorDatabase`` instance.
-        """
-        self.db = db
+    def __init__(self, db: AsyncIOMotorDatabase[dict[str, Any]]):
+        self.users: AsyncIOMotorCollection[dict[str, Any]] = db.users
+        self.sessions: AsyncIOMotorCollection[dict[str, Any]] = db.sessions
+        self.accounts: AsyncIOMotorCollection[dict[str, Any]] = db.accounts
+
+    @staticmethod
+    def _id_to_str(doc: dict[str, Any]) -> dict[str, Any]:
+        """Convert MongoDB's _id (ObjectId) to a string 'id' field."""
+        doc = dict(doc)
+        doc["id"] = str(doc.pop("_id"))
+        return doc
+
+    @staticmethod
+    def _to_object_id(value: str | int) -> ObjectId | str:
+        try:
+            return ObjectId(str(value))
+        except InvalidId:
+            return str(value)
 
     # Internal helpers
     def _to_user(self, doc: dict[str, Any]) -> QulfUserType:
-        return QulfUserType.model_validate(_id_to_str(doc))
+        return QulfUserType.model_validate(self._id_to_str(doc))
 
     def _to_user_with_password(self, doc: dict[str, Any]) -> UserWithPassword:
-        return UserWithPassword.model_validate(_id_to_str(doc))
+        return UserWithPassword.model_validate(self._id_to_str(doc))
 
     def _to_session(self, doc: dict[str, Any]) -> QulfSessionType:
-        return QulfSessionType.model_validate(_id_to_str(doc))
+        return QulfSessionType.model_validate(self._id_to_str(doc))
 
     def _to_account(self, doc: dict[str, Any]) -> QulfAccountType:
-        return QulfAccountType.model_validate(_id_to_str(doc))
+        return QulfAccountType.model_validate(self._id_to_str(doc))
 
     # User operations
     async def get_user_by_email(self, email: str) -> UserWithPassword | None:
-        doc = await self.db.users.find_one({"email": email})
+        doc = await self.users.find_one({"email": email})
         if doc is None:
             return None
         return self._to_user_with_password(doc)
 
     async def get_user_by_id(self, user_id: str | int) -> QulfUserType | None:
-        try:
-            oid = ObjectId(str(user_id))
-        except Exception:
-            return None
-        doc = await self.db.users.find_one({"_id": oid})
+        doc = await self.users.find_one({"_id": self._to_object_id(user_id)})
         if doc is None:
             return None
         return self._to_user(doc)
+
+    async def get_user_by_email_with_password(
+        self, email: str
+    ) -> UserWithPassword | None:
+        doc = await self.users.find_one({"email": email})
+        if doc:
+            doc["id"] = str(doc.pop("_id"))
+            return UserWithPassword(**doc)
+        return None
+
+    async def get_user_by_id_with_password(
+        self, user_id: int | str
+    ) -> UserWithPassword | None:
+        doc = await self.users.find_one({"_id": self._to_object_id(user_id)})
+        if doc:
+            doc["id"] = str(doc.pop("_id"))
+            return UserWithPassword(**doc)
+        return None
 
     async def create_user(
         self, user_data: UserCreate, hashed_password: str
@@ -86,7 +108,7 @@ class MotorAdapter(DatabaseAdapter):
             "updated_at": None,
             "last_login": None,
         }
-        result = await self.db.users.insert_one(doc)
+        result = await self.users.insert_one(doc)
         doc["_id"] = result.inserted_id
         return self._to_user(doc)
 
@@ -101,14 +123,23 @@ class MotorAdapter(DatabaseAdapter):
         update_data = dict(update_data)
         update_data["updated_at"] = datetime.now(timezone.utc)
 
-        doc = await self.db.users.find_one_and_update(
+        doc = await self.users.find_one_and_update(
             {"_id": oid},
             {"$set": update_data},
-            return_document=True,  # pymongo ReturnDocument.AFTER == True
+            return_document=True,
         )
         if doc is None:
             raise ValueError("User not found")
         return self._to_user(doc)
+
+    async def delete_user(self, user_id: str, strategy: DeletionStrategy) -> None:
+        if strategy == DeletionStrategy.HARD:
+            await self.users.delete_one({"_id": self._to_object_id(user_id)})
+        else:
+            await self.users.update_one(
+                {"_id": self._to_object_id(user_id)},
+                {"$set": {"deleted_at": datetime.now(timezone.utc)}},
+            )
 
     # Session operations
     async def create_session(
@@ -129,29 +160,29 @@ class MotorAdapter(DatabaseAdapter):
             "created_at": now,
             "updated_at": None,
         }
-        result = await self.db.sessions.insert_one(doc)
+        result = await self.sessions.insert_one(doc)
         doc["_id"] = result.inserted_id
         return self._to_session(doc)
 
     async def get_session(self, token: str) -> QulfSessionType | None:
-        doc = await self.db.sessions.find_one({"token": token})
+        doc = await self.sessions.find_one({"token": token})
         if doc is None:
             return None
         return self._to_session(doc)
 
     async def delete_session(self, token: str) -> bool:
-        result = await self.db.sessions.delete_one({"token": token})
+        result = await self.sessions.delete_one({"token": token})
         return bool(result.deleted_count > 0)
 
     async def get_user_sessions(self, user_id: str | int) -> list[QulfSessionType]:
-        cursor = self.db.sessions.find({"user_id": str(user_id)})
+        cursor = self.sessions.find({"user_id": str(user_id)})
         docs = await cursor.to_list(length=None)
         return [self._to_session(doc) for doc in docs]
 
     async def delete_user_session(
         self, user_id: str | int, token: str | None = None
     ) -> bool:
-        result = await self.db.sessions.delete_one(
+        result = await self.sessions.delete_one(
             {"user_id": str(user_id), "token": token}
         )
         return bool(result.deleted_count > 0)
@@ -164,12 +195,12 @@ class MotorAdapter(DatabaseAdapter):
             query["token"] = {"$ne": except_token}
 
         # Collect tokens before deletion so we can return them
-        cursor = self.db.sessions.find(query, {"token": 1})
+        cursor = self.sessions.find(query, {"token": 1})
         docs = await cursor.to_list(length=None)
         tokens = [doc["token"] for doc in docs]
 
         if tokens:
-            await self.db.sessions.delete_many(query)
+            await self.sessions.delete_many(query)
 
         return tokens
 
@@ -188,14 +219,14 @@ class MotorAdapter(DatabaseAdapter):
             "created_at": now,
             "updated_at": None,
         }
-        result = await self.db.accounts.insert_one(doc)
+        result = await self.accounts.insert_one(doc)
         doc["_id"] = result.inserted_id
         return self._to_account(doc)
 
     async def get_account_by_provider(
         self, provider_id: str, account_id: str
     ) -> QulfAccountType | None:
-        doc = await self.db.accounts.find_one(
+        doc = await self.accounts.find_one(
             {"provider_id": provider_id, "account_id": account_id}
         )
         if doc is None:

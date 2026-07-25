@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from qulf.adapters.sqlmodel import SQLModelAdapter
+from qulf.config import DeletionStrategy
 from qulf.types import AccountCreate, UserCreate
 
 
@@ -190,3 +191,97 @@ async def test_sqlmodel_inject_custom_columns(sqlmodel_adapter: SQLModelAdapter)
 
     # inject_custom_columns with an unknown table should silently skip
     adapter.inject_custom_columns({"nonexistent_table": {"some_col": str}})
+
+
+@pytest.mark.asyncio
+async def test_sqlmodel_hard_deletes_and_misses(sqlmodel_adapter: SQLModelAdapter):
+    await sqlmodel_adapter.delete_user("fake-id", DeletionStrategy.HARD)
+    assert (
+        await sqlmodel_adapter.get_user_by_email_with_password("nobody@nowhere.com")
+        is None
+    )
+    assert await sqlmodel_adapter.get_user_by_id_with_password("fake-id") is None
+
+    user = await sqlmodel_adapter.create_user(
+        UserCreate(
+            name="a",
+            email="soft@test.com",
+            username="softu",
+            password="p",
+            password_confirmation="p",
+        ),
+        "hashed",
+    )
+
+    u1 = await sqlmodel_adapter.get_user_by_id_with_password(str(user.id))
+    assert u1 is not None and u1.hashed_password == "hashed"
+
+    u2 = await sqlmodel_adapter.get_user_by_email_with_password("soft@test.com")
+    assert u2 is not None and u2.hashed_password == "hashed"
+
+    # Soft delete
+    await sqlmodel_adapter.delete_user(str(user.id), DeletionStrategy.SOFT)
+    deleted_user = await sqlmodel_adapter.get_user_by_id(str(user.id))
+    assert deleted_user is not None
+    assert deleted_user.deleted_at is not None
+
+    # Hard delete
+    await sqlmodel_adapter.delete_user(str(user.id), DeletionStrategy.HARD)
+    hard_deleted = await sqlmodel_adapter.get_user_by_id(str(user.id))
+    assert hard_deleted is None
+
+
+@pytest.mark.asyncio
+async def test_sqlmodel_accounts(sqlmodel_adapter: SQLModelAdapter):
+    user = await sqlmodel_adapter.create_user(
+        UserCreate(
+            name="a",
+            email="acc@test.com",
+            username="accu",
+            password="p",
+            password_confirmation="p",
+        ),
+        "hashed",
+    )
+
+    acc_data = AccountCreate(
+        user_id=str(user.id),
+        account_id="acc123",
+        provider_id="github",
+        access_token="token",
+        refresh_token="refresh",
+        expires_at=datetime.now(timezone.utc),
+        scope="read",
+        id_token="id_token",
+    )
+    acc = await sqlmodel_adapter.create_account(acc_data)
+    assert acc is not None
+
+    fetched = await sqlmodel_adapter.get_account_by_provider("github", "acc123")
+    assert fetched is not None
+    assert fetched.account_id == "acc123"
+
+    miss = await sqlmodel_adapter.get_account_by_provider("google", "acc123")
+    assert miss is None
+
+
+@pytest.mark.asyncio
+async def test_sqlmodel_get_and_delete_user(sqlmodel_adapter: SQLModelAdapter):
+    from qulf.types import UserCreate
+
+    # 1. Create a dummy user
+    user = await sqlmodel_adapter.create_user(
+        UserCreate(
+            name="a",
+            email="del@test.com",
+            username="delu",
+            password="p",
+            password_confirmation="p",
+        ),
+        "hash",
+    )
+
+    # 2. Hit get_user_by_id_with_password (Exists)
+    fetched = await sqlmodel_adapter.get_user_by_id_with_password(str(user.id))
+    assert fetched is not None
+    assert fetched.hashed_password == "hash"

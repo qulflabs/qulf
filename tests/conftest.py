@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from qulf.adapters.base import DatabaseAdapter
 from qulf.adapters.sqlalchemy import QulfBase, SQLAlchemyAdapter
-from qulf.config import QulfConfig
+from qulf.config import DeletionStrategy, QulfConfig
 from qulf.core import Qulf
 from qulf.types import (
     Account,
@@ -55,10 +55,17 @@ class MemoryAdapter(DatabaseAdapter):
             raise ValueError("User not found")
 
         for key, value in update_data.items():
-            # we set extra="allow" on CoreModel, we can just use setattr
+            # we set extra="allow" on CoreModel, to use setattr
             setattr(user, key, value)
 
         return User.model_validate(user, from_attributes=True)
+
+    async def delete_user(self, user_id: str, strategy: DeletionStrategy) -> None:
+        user = self.users.get(str(user_id))
+        if strategy == DeletionStrategy.HARD:
+            self.users.pop(str(user_id))
+        else:
+            setattr(user, "deleted_at", datetime.now(timezone.utc))
 
     async def create_session(
         self, user_id, token, expires_at, ip_address=None, user_agent=None
@@ -132,6 +139,16 @@ class MemoryAdapter(DatabaseAdapter):
             if acc.provider_id == provider_id and acc.account_id == account_id:
                 return acc
         return None
+
+    async def get_user_by_email_with_password(self, email: str):
+        # In memory, we just return the same user object
+        for user in self.users.values():
+            if user.email == email:
+                return user
+        return None
+
+    async def get_user_by_id_with_password(self, user_id: int | str):
+        return self.users.get(str(user_id))
 
 
 @pytest.fixture

@@ -85,8 +85,8 @@ class OAuthPlugin(QulfPlugin):
                     return QulfResponse(
                         status_code=500,
                         body={
-                            "detail": """Database integrity error:
-                             Account has no linked User"""
+                            "detail": "Database integrity error: "
+                            "Account has no linked User"
                         },
                     )
             else:

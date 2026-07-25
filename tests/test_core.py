@@ -180,21 +180,21 @@ async def test_jwt_session_strategy(memory_db):
     )
     session = await auth.sign_in("jwt@test.com", "p")
 
-    # Prove the token is a JWT (it has 3 parts separated by dots)
+    # the token is a JWT
     assert len(session.token.split(".")) == 3
 
-    # 3. Validate Session Statelessly (Even if we delete it from the fake DB!)
+    # Validate Session Statelessly
     memory_db.sessions.clear()  # Simulate an empty database or cache miss
 
     result = await auth.validate_session(session.token)
     assert result is not None
     valid_session, user = result
 
-    # Prove it reconstructed the user perfectly from the JWT payload
+    # reconstructed the user from the JWT payload
     assert user.email == "jwt@test.com"
     assert user.name == "JWT User"
 
-    # 4. Prove expired JWTs are caught
+    # expired JWTs are caught
     from datetime import datetime, timedelta, timezone
 
     import jwt
@@ -259,23 +259,23 @@ def test_get_plugin_registry(memory_db):
 
     auth = Qulf(db=memory_db, plugins=[plugin_a, plugin_b])
 
-    # TEST 1: O(N) Fallback scan by class type
+    # O(N) Fallback scan by class type
     res1 = auth.get_plugin(DummyPluginA)
     assert res1 is plugin_a
 
-    # TEST 2: O(1) Exact lookup by name
+    # O(1) Exact lookup by name
     res2 = auth.get_plugin(DummyPluginB, name="dummy_b")
     assert res2 is plugin_b
 
-    # TEST 3: Type Mismatch Safety
+    # Type Mismatch Safety
     # (Asking for Plugin B, but the name "dummy_a" points to Plugin A)
     res3 = auth.get_plugin(DummyPluginB, name="dummy_a")
     assert res3 is None
 
-    # TEST 4: Plugin not registered
+    # Plugin not registered
     res4 = auth.get_plugin(UnregisteredPlugin)
     assert res4 is None
 
-    # TEST 5: Name not found
+    # Name not found
     res5 = auth.get_plugin(DummyPluginA, name="does_not_exist")
     assert res5 is None

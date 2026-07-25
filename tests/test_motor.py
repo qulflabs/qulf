@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from qulf.adapters.motor import MotorAdapter
+from qulf.config import DeletionStrategy
 from qulf.types import AccountCreate, UserCreate
 
 
@@ -194,3 +195,40 @@ async def test_motor_account_management(motor_adapter: MotorAdapter):
     # Returns None for unknown provider/account
     assert await adapter.get_account_by_provider("github", "unknown") is None
     assert await adapter.get_account_by_provider("unknown-provider", "gh-12345") is None
+
+
+@pytest.mark.asyncio
+async def test_motor_hard_deletes_and_misses(motor_adapter: MotorAdapter):
+    await motor_adapter.delete_user("fake-id", DeletionStrategy.HARD)
+    assert (
+        await motor_adapter.get_user_by_email_with_password("nobody@nowhere.com")
+        is None
+    )
+    assert await motor_adapter.get_user_by_id_with_password("fake-id") is None
+
+
+@pytest.mark.asyncio
+async def test_motor_soft_deletes_and_gets(motor_adapter: MotorAdapter):
+    from qulf.types import UserCreate
+
+    user = await motor_adapter.create_user(
+        UserCreate(
+            name="a",
+            email="soft@test.com",
+            username="softu",
+            password="p",
+            password_confirmation="p",
+        ),
+        "hashed",
+    )
+
+    u1 = await motor_adapter.get_user_by_id_with_password(str(user.id))
+    assert u1 is not None and u1.hashed_password == "hashed"
+
+    u2 = await motor_adapter.get_user_by_email_with_password("soft@test.com")
+    assert u2 is not None and u2.hashed_password == "hashed"
+
+    await motor_adapter.delete_user(str(user.id), DeletionStrategy.SOFT)
+    deleted_user = await motor_adapter.get_user_by_id(str(user.id))
+    assert deleted_user is not None
+    assert deleted_user.deleted_at is not None

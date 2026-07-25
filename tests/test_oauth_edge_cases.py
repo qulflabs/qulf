@@ -61,7 +61,7 @@ def test_oauth_routing_edge_cases():
     assert res_missing.status_code == 400
     assert "Missing code or state" in res_missing.json()["detail"]
 
-    # Callback CSRF mismatch (Cookie doesn't match URL state)
+    # Callback CSRF mismatch
     client.cookies.set("qulf_oauth_state_error_provider", "cookie_state")
     res_csrf = client.get("/oauth/error_provider/callback?code=123&state=url_state")
     assert res_csrf.status_code == 400
@@ -90,7 +90,6 @@ async def test_oauth_db_integrity_error(sqlite_adapter):
     auth = Qulf(db=sqlite_adapter, config=config, plugins=[OAuthPlugin()])
 
     # Manually inject an orphaned account into the database
-    # (User ID 99999 does not exist)
     await sqlite_adapter.create_account(
         AccountCreate(user_id=99999, account_id="999", provider_id="error_provider")
     )

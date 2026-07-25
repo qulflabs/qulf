@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Any
 
+from qulf.config import DeletionStrategy
 from qulf.types import (
     Account,
     AccountCreate,
@@ -22,12 +23,29 @@ class DatabaseAdapter(ABC):
     """
 
     @abstractmethod
-    async def get_user_by_email(self, email: str) -> UserWithPassword | None:
+    async def get_user_by_email_with_password(
+        self, email: str
+    ) -> UserWithPassword | None:
         """
         Retrieves a user profile including the sensitive hashed password.
 
         This method is utilized during the sign-in phase to compare password.
         """
+        pass  # pragma: no cover
+
+    @abstractmethod
+    async def get_user_by_email(self, email: str) -> User | None:
+        """
+        Retrieves a user profile including the sensitive hashed password.
+
+        This method is utilized during the sign-in phase to compare password.
+        """
+        pass  # pragma: no cover
+
+    @abstractmethod
+    async def get_user_by_id_with_password(
+        self, user_id: int | str
+    ) -> UserWithPassword | None:
         pass  # pragma: no cover
 
     @abstractmethod
@@ -42,6 +60,15 @@ class DatabaseAdapter(ABC):
     async def update_user(
         self, user_id: str | int, update_data: dict[str, Any]
     ) -> User:
+        pass  # pragma: no cover
+
+    @abstractmethod
+    async def delete_user(self, user_id: str, strategy: DeletionStrategy) -> None:
+        """
+        Deletes a user.
+        If strategy == DeletionStrategy.SOFT, set `deleted_at` to the current UTC time.
+        If strategy == DeletionStrategy.HARD, completely remove the row.
+        """
         pass  # pragma: no cover
 
     @abstractmethod

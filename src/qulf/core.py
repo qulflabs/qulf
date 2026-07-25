@@ -1,13 +1,19 @@
 from datetime import datetime, timedelta, timezone
-from typing import TypeVar
+from typing import Any, TypeVar
 
 import jwt
 
 from qulf.adapters.base import DatabaseAdapter
 from qulf.config import QulfConfig
-from qulf.crypto import generate_session_token, hash_password, verify_password
+from qulf.crypto import (
+    generate_session_token,
+    hash_password,
+    verify_password,
+)
 from qulf.exceptions import (
     InvalidCredentialsError,
+    QulfException,
+    UserAccountDeactivatedError,
     UserAlreadyExistsError,
     UserNotFoundError,
 )
@@ -118,9 +124,13 @@ class Qulf:
         for plugin in self.plugins.values():
             await plugin.before_sign_in(email, ip_address)
 
-        user = await self.db.get_user_by_email(email)
+        user = await self.db.get_user_by_email_with_password(email)
         if not user:
             raise UserNotFoundError("User not found.")
+
+        if user.deleted_at is not None:
+            raise UserAccountDeactivatedError("Account deactivated.")
+
         verify = verify_password(password, user.hashed_password)
         if not verify:
             raise InvalidCredentialsError("Password incorrect")
@@ -252,3 +262,114 @@ class Qulf:
         return await self.db.delete_all_user_sessions(
             user_id=user_id, except_token=except_token
         )
+
+    async def generate_password_reset_token(self, email: str) -> str:
+        """Generates a secure JWT for password resets."""
+        user = await self.db.get_user_by_email(email)
+        if not user:
+            raise QulfException("If the email exists, a reset link will be sent.")
+
+        if user.deleted_at is not None:
+            raise UserAccountDeactivatedError("Account deactivated.")
+
+        minutes = self.config.password_reset.token_expires_in
+        payload = {
+            "sub": str(user.id),
+            "action": "reset_password",
+            "exp": datetime.now(timezone.utc) + minutes,
+        }
+        session_token = jwt.encode(payload, self.config.secret_key, algorithm="HS256")
+        if self.config.email_hooks.send_password_reset:
+            await self.config.email_hooks.send_password_reset(email, session_token)
+        return session_token
+
+    async def reset_password(self, token: str, new_password: str) -> User:
+        """Verifies the token and updates the user's password."""
+        try:
+            payload = jwt.decode(token, self.config.secret_key, algorithms=["HS256"])
+        except jwt.ExpiredSignatureError:
+            raise QulfException("Token expired")
+        except jwt.InvalidTokenError:
+            raise QulfException("Invalid token")
+
+        action: str = payload["action"]
+        user_id: str = payload["sub"]
+        if action == "reset_password":
+            hashed_password = hash_password(password=new_password)
+            update_data: dict[str, Any] = {"hashed_password": hashed_password}
+            if self.config.password_reset.auto_verify_email:
+                update_data["email_verified_at"] = datetime.now(timezone.utc)
+            user = await self.db.update_user(user_id, update_data)
+            if not user or user.deleted_at is not None:
+                raise QulfException("User not found or account deactivated")
+            return user
+        raise QulfException("Invalid action")
+
+    async def generate_email_verification_token(self, email: str) -> str:
+        """Generates a secure, JWT for email verification."""
+        user = await self.db.get_user_by_email(email)
+        if not user or user.deleted_at is not None:
+            raise QulfException("User not found or account deactivated")
+
+        days = self.config.email_verification.token_expires_in
+        payload = {
+            "sub": str(user.id),
+            "action": "verify_email",
+            "exp": datetime.now(timezone.utc) + days,
+        }
+        email_verification_token = jwt.encode(
+            payload, self.config.secret_key, algorithm="HS256"
+        )
+        if self.config.email_hooks.send_verification:
+            await self.config.email_hooks.send_verification(
+                email, email_verification_token
+            )
+        return email_verification_token
+
+    async def verify_email(self, token: str) -> User | None:
+        """Verifies the token and marks the user's email as verified."""
+        try:
+            payload = jwt.decode(token, self.config.secret_key, algorithms=["HS256"])
+            if not payload["action"] == "verify_email":
+                raise QulfException("Invalid action")
+            user_id = payload["sub"]
+            user = await self.db.get_user_by_id(user_id)
+            if not user or user.deleted_at is not None:
+                raise QulfException("User not found or account deactivated")
+            verified_email_user = await self.db.update_user(
+                user_id, {"email_verified_at": datetime.now(timezone.utc)}
+            )
+            return verified_email_user
+        except jwt.ExpiredSignatureError:
+            raise QulfException("Token expired")
+        except jwt.InvalidTokenError:
+            raise QulfException("Invalid token")
+
+    async def change_password(
+        self, user_id: str, old_password: str, new_password: str
+    ) -> User:
+        """Allows an authenticated user to change their password."""
+        user = await self.db.get_user_by_id_with_password(user_id)
+        if not user or user.deleted_at is not None:
+            raise QulfException("User not found or account deactivated")
+        verified = verify_password(old_password, user.hashed_password)
+        if not verified:
+            raise QulfException("Invalid current password.")
+        hashed_password = hash_password(new_password)
+        updated_user = await self.db.update_user(
+            user_id, {"hashed_password": hashed_password}
+        )
+        return updated_user
+
+    async def delete_account(self, user_id: str) -> None:
+        """
+        Deletes the user account based on the global DeletionStrategy.
+        Respects the AccountDeletionConfig.enabled flag.
+        """
+        if not self.config.account_deletion.enabled:
+            raise QulfException("Account deletion is disabled")
+        user = await self.db.get_user_by_id(user_id)
+        if not user or user.deleted_at is not None:
+            raise QulfException("User not found or account deactivated")
+        strategy = self.config.deletion.get_strategy("user")
+        return await self.db.delete_user(str(user.id), strategy)

@@ -1,12 +1,18 @@
 from typing import Any, cast
 
-from litestar import Request, Response, Router, post, route
+from litestar import Request, Response, Router, delete, post, route
 from litestar.datastructures import Cookie
 from litestar.types import Method
 
 from qulf.core import Qulf
 from qulf.exceptions import QulfException
-from qulf.frameworks.base import SignInRequest
+from qulf.frameworks import (
+    ChangePasswordRequest,
+    ForgotPasswordRequest,
+    ResetPasswordRequest,
+    SignInRequest,
+    VerifyEmailRequest,
+)
 from qulf.routing import QulfRequest
 from qulf.types import User, UserCreate
 
@@ -17,9 +23,19 @@ def serve_qulf(auth: Qulf) -> Router:
     serving standard authentication endpoints.
     """
 
+    async def _get_authenticated_user_id(request: Request[Any, Any, Any]) -> str:
+        token = request.cookies.get(auth.config.cookies.name)
+        if not token:
+            raise QulfException("Unauthorized")
+
+        validated_session = await auth.validate_session(token)
+        if validated_session:
+            session, user = validated_session
+            return str(user.id)
+        raise QulfException("Unauthorized")
+
     @post("/sign-up")
     async def sign_up(data: UserCreate) -> User | Response[dict[str, str]]:
-        # Notice how Litestar magically parses `data` into UserCreate!
         try:
             return await auth.sign_up(data)
         except QulfException as e:
@@ -65,7 +81,62 @@ def serve_qulf(auth: Qulf) -> Router:
             {"message": "Signed out successfully"}, cookies=[cookie], status_code=200
         )
 
-    # Plugin Routing
+    @post("/forgot-password")
+    async def forgot_password(data: ForgotPasswordRequest) -> Response[Any]:
+        try:
+            await auth.generate_password_reset_token(data.email)
+            return Response({"message": "Reset link generated"})
+        except QulfException as e:
+            return Response({"detail": str(e)}, status_code=400)
+
+    @post("/reset-password")
+    async def reset_password(data: ResetPasswordRequest) -> Response[Any]:
+        try:
+            await auth.reset_password(data.token, data.new_password)
+            return Response({"message": "Password reset successfully"})
+        except QulfException as e:
+            return Response({"detail": str(e)}, status_code=400)
+
+    @post("/verify-email")
+    async def verify_email(data: VerifyEmailRequest) -> Response[Any]:
+        try:
+            await auth.verify_email(data.token)
+            return Response({"message": "Email verified successfully"})
+        except QulfException as e:
+            return Response({"detail": str(e)}, status_code=400)
+
+    # AUTHENTICATED ROUTES
+    @post("/change-password")
+    async def change_password(
+        data: ChangePasswordRequest, request: Request[Any, Any, Any]
+    ) -> Response[Any]:
+        try:
+            user_id = await _get_authenticated_user_id(request)
+            await auth.change_password(user_id, data.old_password, data.new_password)
+            return Response({"message": "Password changed successfully"})
+        except QulfException as e:
+            status_code = 401 if str(e) == "Unauthorized" else 400
+            return Response({"detail": str(e)}, status_code=status_code)
+
+    @delete("/account", status_code=200)
+    async def delete_account(request: Request[Any, Any, Any]) -> Response[Any]:
+        try:
+            user_id = await _get_authenticated_user_id(request)
+            await auth.delete_account(user_id)
+            await auth.revoke_all_user_sessions(user_id)
+        except QulfException as e:
+            status_code = 401 if str(e) == "Unauthorized" else 400
+            return Response({"detail": str(e)}, status_code=status_code)
+
+        delete_cookie = Cookie(
+            key=auth.config.cookies.name,
+            value="",
+            max_age=0,
+        )
+        return Response(
+            {"message": "Account deleted successfully"}, cookies=[delete_cookie]
+        )
+
     plugin_routes = []
 
     for plugin in auth.plugins.values():
@@ -94,7 +165,6 @@ def serve_qulf(auth: Qulf) -> Router:
                         user_agent=request.headers.get("user-agent"),
                     )
 
-                    # Await handler
                     qulf_response = await route_def.handler(qulf_request)
 
                     # QulfResponse -> Litestar Cookies
@@ -116,7 +186,6 @@ def serve_qulf(auth: Qulf) -> Router:
                             Cookie(key=cookie_name, value="", max_age=0)
                         )
 
-                    # Return Litestar Response
                     return Response(
                         content=qulf_response.body
                         if qulf_response.body is not None
@@ -130,4 +199,17 @@ def serve_qulf(auth: Qulf) -> Router:
 
             plugin_routes.append(make_handler(qulf_route))
 
-    return Router(path="/", route_handlers=[sign_up, sign_in, sign_out] + plugin_routes)
+    return Router(
+        path="/",
+        route_handlers=[
+            sign_up,
+            sign_in,
+            sign_out,
+            forgot_password,
+            reset_password,
+            verify_email,
+            change_password,
+            delete_account,
+        ]
+        + plugin_routes,
+    )

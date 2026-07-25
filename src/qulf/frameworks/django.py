@@ -8,7 +8,13 @@ from pydantic import ValidationError
 
 from qulf.core import Qulf
 from qulf.exceptions import QulfException
-from qulf.frameworks.base import SignInRequest
+from qulf.frameworks import (
+    ChangePasswordRequest,
+    ForgotPasswordRequest,
+    ResetPasswordRequest,
+    SignInRequest,
+    VerifyEmailRequest,
+)
 from qulf.routing import QulfRequest
 from qulf.types import UserCreate
 
@@ -46,6 +52,18 @@ def serve_qulf(auth: Qulf) -> list[Any]:
     Constructs and returns a list of Django URL patterns
     serving standard authentication endpoints.
     """
+
+    async def _get_authenticated_user_id(request: HttpRequest) -> str:
+        """Helper to extract user_id from the session cookie."""
+        token = request.COOKIES.get(auth.config.cookies.name)
+        if not token:
+            raise QulfException("Unauthorized")
+
+        validated_session = await auth.validate_session(token)
+        if validated_session:
+            session, user = validated_session
+            return str(user.id)
+        raise QulfException("Unauthorized")
 
     async def sign_up(request: HttpRequest) -> JsonResponse:
         if request.method != "POST":
@@ -103,10 +121,80 @@ def serve_qulf(auth: Qulf) -> list[Any]:
         response.delete_cookie(key=auth.config.cookies.name, path="/")
         return response
 
+    async def forgot_password(request: HttpRequest) -> JsonResponse:
+        if request.method != "POST":
+            return JsonResponse({"detail": "Method not allowed"}, status=405)
+        try:
+            body = json.loads(request.body)
+            ForgotPasswordRequest.model_validate(body)
+            await auth.generate_password_reset_token(body["email"])
+            return JsonResponse({"message": "Reset link generated successfully"})
+        except (ValueError, ValidationError, QulfException) as e:
+            return JsonResponse({"detail": str(e)}, status=400)
+
+    async def reset_password(request: HttpRequest) -> JsonResponse:
+        if request.method != "POST":
+            return JsonResponse({"detail": "Method not allowed"}, status=405)
+        try:
+            body = json.loads(request.body)
+            validated_body = ResetPasswordRequest.model_validate(body)
+            await auth.reset_password(validated_body.token, validated_body.new_password)
+            return JsonResponse({"message": "Password reset successfully"})
+        except (ValueError, ValidationError, QulfException) as e:
+            return JsonResponse({"detail": str(e)}, status=400)
+
+    async def verify_email(request: HttpRequest) -> JsonResponse:
+        if request.method != "POST":
+            return JsonResponse({"detail": "Method not allowed"}, status=405)
+        try:
+            body = json.loads(request.body)
+            validated_body = VerifyEmailRequest.model_validate(body)
+            await auth.verify_email(validated_body.token)
+            return JsonResponse({"message": "Email verified successfully"})
+        except (ValueError, ValidationError, QulfException) as e:
+            return JsonResponse({"detail": str(e)}, status=400)
+
+    # --- AUTHENTICATED ROUTES ---
+
+    async def change_password(request: HttpRequest) -> JsonResponse:
+        if request.method != "POST":
+            return JsonResponse({"detail": "Method not allowed"}, status=405)
+        try:
+            user_id = await _get_authenticated_user_id(request)
+            body = json.loads(request.body)
+            validated_body = ChangePasswordRequest.model_validate(body)
+            await auth.change_password(
+                user_id, validated_body.old_password, validated_body.new_password
+            )
+            return JsonResponse({"message": "Password changed"})
+        except (ValueError, ValidationError, QulfException) as e:
+            status_code = 401 if str(e) == "Unauthorized" else 400
+            return JsonResponse({"detail": str(e)}, status=status_code)
+
+    async def delete_account(request: HttpRequest) -> JsonResponse:
+        if request.method != "DELETE":
+            return JsonResponse({"detail": "Method not allowed"}, status=405)
+        try:
+            user_id = await _get_authenticated_user_id(request)
+            await auth.delete_account(user_id)
+            await auth.revoke_all_user_sessions(user_id)
+
+            response = JsonResponse({"message": "Account deleted successfully"})
+            response.delete_cookie(key=auth.config.cookies.name, path="/")
+            return response
+        except QulfException as e:
+            status_code = 401 if str(e) == "Unauthorized" else 400
+            return JsonResponse({"detail": str(e)}, status=status_code)
+
     urlpatterns = [
         path("sign-up", csrf_exempt(sign_up), name="sign-up"),
         path("sign-in", csrf_exempt(sign_in), name="sign-in"),
         path("sign-out", csrf_exempt(sign_out), name="sign-out"),
+        path("forgot-password", csrf_exempt(forgot_password), name="forgot-password"),
+        path("reset-password", csrf_exempt(reset_password), name="reset-password"),
+        path("verify-email", csrf_exempt(verify_email), name="verify-email"),
+        path("change-password", csrf_exempt(change_password), name="change-password"),
+        path("delete-account", csrf_exempt(delete_account), name="delete-account"),
     ]
 
     for plugin in auth.plugins.values():

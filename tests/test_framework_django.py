@@ -13,10 +13,10 @@ if not settings.configured:
 
 from django.test import RequestFactory
 
+from qulf import CookieOptions, HttpMethod, QulfRequest, QulfResponse, QulfRoute
 from qulf.core import Qulf
 from qulf.exceptions import QulfException
 from qulf.frameworks.django import _get_client_ip, _get_user_agent, serve_qulf
-from qulf.routing import CookieOptions, QulfRequest, QulfResponse, QulfRoute
 
 
 # IP & User-Agent Helper Tests
@@ -79,7 +79,6 @@ def mock_auth() -> MagicMock:
 
 
 # Sign-Up View Tests
-# We include 'name' and 'username' to satisfy the internal UserCreate Pydantic model
 VALID_USER_PAYLOAD = {
     "email": "test@test.com",
     "name": "Test User",
@@ -123,17 +122,17 @@ async def test_sign_up_sad_paths(rf: RequestFactory, mock_auth: MagicMock) -> No
     urlpatterns = serve_qulf(mock_auth)
     sign_up_view = urlpatterns[0].callback
 
-    # Path 1: Not a POST method
+    # Not a POST method
     res1 = await sign_up_view(rf.get("/sign-up"))
     assert res1.status_code == 405
 
-    # Path 2: Invalid JSON
+    # Invalid JSON
     res2 = await sign_up_view(
         rf.post("/sign-up", data="bad-json", content_type="application/json")
     )
     assert res2.status_code == 400
 
-    # Path 3: ValidationError (missing password)
+    # ValidationError
     invalid_payload = {
         "email": "test@test.com",
         "name": "Test User",
@@ -148,7 +147,7 @@ async def test_sign_up_sad_paths(rf: RequestFactory, mock_auth: MagicMock) -> No
     )
     assert res3.status_code == 400
 
-    # Path 4: QulfException thrown from core
+    # QulfException thrown from core
     mock_auth.sign_up.side_effect = QulfException("User already exists")
     res4 = await sign_up_view(
         rf.post(
@@ -240,12 +239,12 @@ async def test_plugin_dynamic_routing(rf: RequestFactory, mock_auth: MagicMock) 
 
     mock_plugin = MagicMock()
     mock_plugin.get_routes.return_value = [
-        QulfRoute(path="/my-plugin", methods=["POST"], handler=dummy_handler)
+        QulfRoute(path="/my-plugin", methods=[HttpMethod.POST], handler=dummy_handler)
     ]
     mock_auth.plugins = {"dummy": mock_plugin}
 
     urlpatterns = serve_qulf(mock_auth)
-    plugin_view = urlpatterns[3].callback
+    plugin_view = urlpatterns[-1].callback
 
     request = rf.post(
         "/my-plugin?test=123",
@@ -275,3 +274,155 @@ async def test_plugin_dynamic_routing(rf: RequestFactory, mock_auth: MagicMock) 
     req_bad_json.GET = QueryDict()
     res_bad = await plugin_view(req_bad_json)
     assert res_bad.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_django_account_management_routes(
+    rf: RequestFactory, mock_auth: MagicMock
+) -> None:
+    urlpatterns = serve_qulf(mock_auth)
+    # test Django's new routes by mocking the POSTs
+    views = {
+        p.pattern._route: p.callback
+        for p in urlpatterns
+        if hasattr(p.pattern, "_route")
+    }
+
+    # 1. Happy Paths
+    req1 = rf.post(
+        "/forgot-password",
+        data=json.dumps({"email": "a@a.com"}),
+        content_type="application/json",
+    )
+    assert (await views["forgot-password"](req1)).status_code == 200
+
+    req2 = rf.post(
+        "/reset-password",
+        data=json.dumps({"token": "t", "new_password": "p"}),
+        content_type="application/json",
+    )
+    assert (await views["reset-password"](req2)).status_code == 200
+
+    req3 = rf.post(
+        "/verify-email",
+        data=json.dumps({"token": "t"}),
+        content_type="application/json",
+    )
+    assert (await views["verify-email"](req3)).status_code == 200
+
+    # Authenticated Happy Paths
+    req4 = rf.post(
+        "/change-password",
+        data=json.dumps({"old_password": "o", "new_password": "p"}),
+        content_type="application/json",
+    )
+    req4.COOKIES["qulf_session"] = "valid-token"
+    mock_auth.validate_session.return_value = (MagicMock(), MagicMock(id="user_1"))
+    assert (await views["change-password"](req4)).status_code == 200
+
+    req5 = rf.delete("/delete-account")
+    req5.COOKIES["qulf_session"] = "valid-token"
+    assert (await views["delete-account"](req5)).status_code == 200
+
+    # 2. Sad Paths
+    assert (
+        await views["forgot-password"](rf.get("/forgot-password"))
+    ).status_code == 405
+    assert (await views["reset-password"](rf.get("/reset-password"))).status_code == 405
+    assert (await views["verify-email"](rf.get("/verify-email"))).status_code == 405
+    assert (
+        await views["change-password"](rf.get("/change-password"))
+    ).status_code == 405
+    assert (
+        await views["delete-account"](rf.post("/delete-account"))
+    ).status_code == 405
+
+    # Sad path validation
+    req_bad = rf.post(
+        "/forgot-password", data="bad-json", content_type="application/json"
+    )
+    assert (await views["forgot-password"](req_bad)).status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_django_core_exceptions(rf: RequestFactory, mock_auth: MagicMock):
+    mock_auth.reset_password.side_effect = QulfException("Core Reset Error")
+    mock_auth.verify_email.side_effect = QulfException("Core Verify Error")
+    mock_auth.change_password.side_effect = QulfException("Core Change Error")
+    mock_auth.delete_account.side_effect = QulfException("Core Delete Error")
+    mock_auth.validate_session.return_value = (MagicMock(), MagicMock(id="user1"))
+
+    urlpatterns = serve_qulf(mock_auth)
+    views = {
+        p.pattern._route: p.callback
+        for p in urlpatterns
+        if hasattr(p.pattern, "_route")
+    }
+    delete_view = next(
+        p.callback
+        for p in urlpatterns
+        if hasattr(p.pattern, "_route") and "account" in p.pattern._route
+    )
+
+    req1 = rf.post(
+        "/reset-password",
+        data=json.dumps({"token": "t", "new_password": "p"}),
+        content_type="application/json",
+    )
+    assert (await views["reset-password"](req1)).status_code == 400
+
+    req2 = rf.post(
+        "/verify-email",
+        data=json.dumps({"token": "t"}),
+        content_type="application/json",
+    )
+    assert (await views["verify-email"](req2)).status_code == 400
+
+    req3 = rf.post(
+        "/change-password",
+        data=json.dumps({"old_password": "o", "new_password": "p"}),
+        content_type="application/json",
+    )
+    req3.COOKIES["qulf_session"] = "valid-token"
+    assert (await views["change-password"](req3)).status_code == 400
+
+    req4 = rf.delete("/account")
+    req4.COOKIES["qulf_session"] = "valid-token"
+    assert (await delete_view(req4)).status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_django_sign_up_sign_in_exceptions(
+    rf: RequestFactory, mock_auth: MagicMock
+):
+    mock_auth.sign_up.side_effect = QulfException("Sign up error")
+    mock_auth.sign_in.side_effect = QulfException("Sign in error")
+
+    urlpatterns = serve_qulf(mock_auth)
+    views = {
+        p.pattern._route: p.callback
+        for p in urlpatterns
+        if hasattr(p.pattern, "_route")
+    }
+
+    req1 = rf.post(
+        "/sign-up",
+        data=json.dumps(
+            {
+                "name": "A",
+                "email": "a@a.com",
+                "username": "a",
+                "password": "p",
+                "password_confirmation": "p",
+            }
+        ),
+        content_type="application/json",
+    )
+    assert (await views["sign-up"](req1)).status_code == 400
+
+    req2 = rf.post(
+        "/sign-in",
+        data=json.dumps({"email": "a@a.com", "password": "p"}),
+        content_type="application/json",
+    )
+    assert (await views["sign-in"](req2)).status_code == 400

@@ -69,7 +69,7 @@ class DatabaseAdapter(ABC):
         If strategy == DeletionStrategy.SOFT, set `deleted_at` to the current UTC time.
         If strategy == DeletionStrategy.HARD, completely remove the row.
         """
-        pass
+        pass  # pragma: no cover
 
     @abstractmethod
     async def create_session(

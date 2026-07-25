@@ -1,12 +1,13 @@
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, ClassVar
 
-from sqlalchemy import Boolean, Integer, String
+from sqlalchemy import Boolean, Integer, String, delete
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import mapped_column
 from sqlmodel import Field, SQLModel, select
 
 from qulf.adapters.base import DatabaseAdapter
+from qulf.config import DeletionStrategy
 from qulf.types import (
     Account as QulfAccountType,
 )
@@ -34,6 +35,7 @@ class UserMixin(SQLModel):
     hashed_password: str
     created_at: datetime
     updated_at: datetime | None = None
+    deleted_at: datetime | None = None
     last_login: datetime | None = None
 
 
@@ -69,7 +71,7 @@ class AccountMixin(SQLModel):
 class DefaultUser(UserMixin, table=True):
     """Default User table schema."""
 
-    __tablename__ = "user"  # pyrefly: ignore[bad-override]
+    __tablename__: ClassVar[Any] = "users"
 
     id: int | None = Field(default=None, primary_key=True)
 
@@ -77,19 +79,19 @@ class DefaultUser(UserMixin, table=True):
 class DefaultSession(SessionMixin, table=True):
     """Default Session table schema."""
 
-    __tablename__ = "session"  # pyrefly: ignore[bad-override]
+    __tablename__: ClassVar[Any] = "sessions"
 
     id: int | None = Field(default=None, primary_key=True)
-    user_id: int = Field(foreign_key="user.id")
+    user_id: int = Field(foreign_key="users.id")
 
 
 class DefaultAccount(AccountMixin, table=True):
     """Default Account table schema."""
 
-    __tablename__ = "account"  # pyrefly: ignore[bad-override]
+    __tablename__: ClassVar[Any] = "accounts"
 
     id: int | None = Field(default=None, primary_key=True)
-    user_id: int = Field(foreign_key="user.id")
+    user_id: int = Field(foreign_key="users.id")
 
 
 class SQLModelAdapter(DatabaseAdapter):
@@ -147,6 +149,36 @@ class SQLModelAdapter(DatabaseAdapter):
             if not db_user:
                 return None
             return QulfUserType.model_validate(db_user, from_attributes=True)
+
+    async def get_user_by_email_with_password(
+        self, email: str
+    ) -> UserWithPassword | None:
+        async with self.session_maker() as session:
+            statement = select(self.user_model).where(self.user_model.email == email)
+            result = await session.execute(statement)
+            db_user = result.scalar_one_or_none()
+            if db_user is None:
+                return None
+            return UserWithPassword.model_validate(db_user, from_attributes=True)
+
+    async def get_user_by_id_with_password(
+        self, user_id: int | str
+    ) -> UserWithPassword | None:
+        async with self.session_maker() as session:
+            db_user = await session.get(self.user_model, str(user_id))
+            if db_user is None:
+                return None
+            return UserWithPassword.model_validate(db_user, from_attributes=True)
+
+    async def delete_user(self, user_id: str, strategy: DeletionStrategy) -> None:
+        async with self.session_maker() as session:
+            db_user = await session.get(self.user_model, user_id)
+            if db_user:
+                if strategy == DeletionStrategy.HARD:
+                    await session.delete(db_user)
+                else:
+                    db_user.deleted_at = datetime.now(timezone.utc)
+                await session.commit()
 
     async def create_user(
         self, user_data: UserCreate, hashed_password: str
@@ -214,7 +246,6 @@ class SQLModelAdapter(DatabaseAdapter):
             return QulfSessionType.model_validate(db_session, from_attributes=True)
 
     async def delete_session(self, token: str) -> bool:
-        from sqlalchemy import delete
 
         async with self.session_maker() as session:
             stmt = (

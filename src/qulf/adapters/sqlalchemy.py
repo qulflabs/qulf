@@ -1,11 +1,21 @@
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, delete, select
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    delete,
+    select,
+    update,
+)
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from qulf.adapters.base import DatabaseAdapter
+from qulf.config import DeletionStrategy
 from qulf.types import (
     Account as QulfAccountType,
 )
@@ -37,6 +47,9 @@ class UserMixin:
     hashed_password: Mapped[str] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     last_login: Mapped[datetime | None] = mapped_column(
@@ -71,7 +84,7 @@ class QulfBase(DeclarativeBase):
 class DefaultUser(QulfBase, UserMixin):
     """Default User table schema ('user') used if no custom model is supplied."""
 
-    __tablename__ = "user"
+    __tablename__ = "users"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
 
 
@@ -79,9 +92,9 @@ class DefaultSession(QulfBase, SessionMixin):
     """Default Session table schema ('session')
     used if no custom model is supplied."""
 
-    __tablename__ = "session"
+    __tablename__ = "sessions"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
 
 
 class AccountMixin:
@@ -111,9 +124,9 @@ class DefaultAccount(QulfBase, AccountMixin):
     Default Account table schema ('account') used if no custom model is supplied.
     """
 
-    __tablename__ = "account"
+    __tablename__ = "accounts"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
 
 
 class SQLAlchemyAdapter(DatabaseAdapter):
@@ -238,6 +251,21 @@ class SQLAlchemyAdapter(DatabaseAdapter):
             await session.commit()
             await session.refresh(user)
             return QulfUserType.model_validate(user, from_attributes=True)
+
+    async def delete_user(self, user_id: str, strategy: DeletionStrategy) -> None:
+
+        async with self.session_maker() as session:
+            if strategy == DeletionStrategy.HARD:
+                await session.execute(
+                    delete(self.user_model).where(self.user_model.id == user_id)
+                )
+            else:
+                await session.execute(
+                    update(self.user_model)
+                    .where(self.user_model.id == user_id)
+                    .values(deleted_at=datetime.now(timezone.utc))
+                )
+                await session.commit()
 
     async def create_session(
         self,

@@ -137,9 +137,3 @@ To see all available development commands, simply type:
 Distributed under the MIT License. See LICENSE for more information.
 
 ***
-
-### What's next?
-
-You have officially wrapped up Phase 4. Releasing a v1.0 of an authentication library is a massive endeavor. I highly suggest creating a `v1.0.0` release tag on GitHub! 
-
-Are we jumping into the JavaScript SDK next, or taking a well-deserved break?

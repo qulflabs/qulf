@@ -74,7 +74,5 @@ def test_validator_ensure_predicate(valid_user: UserWithPassword) -> None:
     with pytest.raises(CustomError):
         UserValidator(valid_user).ensure(False, CustomError, "string message")
 
-    validator = UserValidator(valid_user).ensure(
-        True, CustomError, "string message"
-    )
+    validator = UserValidator(valid_user).ensure(True, CustomError, "string message")
     assert validator.user is not None

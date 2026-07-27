@@ -32,7 +32,7 @@ class UserAlreadyExistsError(QulfException):
 
 class AuthenticationError(QulfException):
     """
-    Base class for login and session failures.
+    Base class for authentication failures.
 
     Allows catch-all logic for any generic credential or session validation failures.
     """
@@ -42,10 +42,7 @@ class AuthenticationError(QulfException):
 
 class UserNotFoundError(AuthenticationError):
     """
-    Raised during sign-in if the email doesn't exist.
-
-    Maintained as a discrete exception internally, although framework adapters may merge
-    this with InvalidCredentialsError to prevent user enumeration.
+    Raised when a user entry can't be found.
     """
 
     pass
@@ -53,10 +50,23 @@ class UserNotFoundError(AuthenticationError):
 
 class UserAccountDeactivatedError(AuthenticationError):
     """
-    Raised during sign-in if the email doesn't exist.
+    Raised when an acount has been soft-deleted.
+    """
 
-    Maintained as a discrete exception internally, although framework adapters may merge
-    this with InvalidCredentialsError to prevent user enumeration.
+    pass
+
+
+class UserEmailNotVerifiedError(AuthenticationError):
+    """
+    Raised when an email has not been verified.
+    """
+
+    pass
+
+
+class UserPasswordLoginDisabledError(AuthenticationError):
+    """
+    Raised when an account has no password
     """
 
     pass

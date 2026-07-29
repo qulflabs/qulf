@@ -164,7 +164,7 @@ case "$usage_kind" in
   major) cz bump --increment MAJOR  "${dry_run_args[@]}" ;;
 esac
 
-if [[ "$usage_dry_run" == "true" ]]; then
+if [[ "${usage_dry_run:-}" == "true" ]]; then
   echo
   echo "✅ Dry run complete."
   exit 0

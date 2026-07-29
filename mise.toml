@@ -148,7 +148,7 @@ if [[ "$local_sha" != "$remote_sha" ]]; then
 fi
 
 dry_run_args=()
-if [[ "$usage_dry_run" == "true" ]]; then
+if [[ "${usage_dry_run:-}" == "true" ]]; then
   dry_run_args+=(--dry-run)
   echo "🧪 Running in dry-run mode."
 fi

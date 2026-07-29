@@ -89,5 +89,5 @@ update_changelog_on_bump = true
 version_files = [
   "pyproject.toml:version",
 ]
-version_provider = "pep621"
+version_provider = "uv"
 version_scheme = "pep440"

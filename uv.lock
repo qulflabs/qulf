@@ -1987,7 +1987,7 @@ wheels = [
 
 [[package]]
 name = "qulf"
-version = "0.1.0b2"
+version = "0.1.0b3"
 source = { editable = "." }
 dependencies = [
     { name = "argon2-cffi" },

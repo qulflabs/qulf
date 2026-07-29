@@ -1,0 +1,65 @@
+## v0.1.0b3 (2026-07-29)
+
+### Feat
+
+- **validators**: add user validation utility and new exceptions
+- **litestar**: add password management and account deletion endpoints
+- **fastapi**: add password management and account deletion endpoints
+- **django**: add missing auth endpoints to django framework integration
+- **adapter**: add support for user deletion and password retrieval in motor adapter
+- **adapters**: implement user deletion and pluralize table names
+- **core**: add email hooks and update auth error handling
+- **frameworks**: add authentication request models
+- **adapter**: add password-specific user retrieval methods
+- **core**: add password reset, email verification, and account deletion
+- **exceptions**: add user account deactivated error
+- **types**: add timestamp fields to user session and account models
+- **config**: add configuration schemas for deletion, password reset, and email management
+- **litestar**: add litestar framework integration support
+- **routing**: add httpmethod enum and update route definitions
+- **litestar**: add litestar framework integration support
+- **routing**: add httpmethod enum and update route definitions
+- **django**: add django framework support and tests
+- **django**: add django integration for qulf framework
+- **core**: added a type safe get_plugin method.
+- **rate_limit**: add fixed window rate limiter implementation
+- **rate_limit**: add sliding window rate limiting implementation
+- **adapters**: added SQLModel database adapter
+- **rate_limit**: implement token bucket rate limiting
+- **plugins**: add rate limiting support
+- **plugins**: improve user retrieval and add type hints
+- **fastapi**: add type definitions and improve endpoint signatures
+- **core**: implement plugin lifecycle hooks engine (PIT-5)
+
+### Fix
+
+- **mise**: handle unbound variable for dry run flag
+- **mise**: handle unset usage_dry_run variable safely
+- **oauth**: format database integrity error message string
+- **deps**: added missing dev dependency aiosqlite
+- **deps**: added missing dev dependencies respx and faker
+- **code**: sort export lists alphabetically
+- **github**: update codecov reporting configuration
+- **build**: fix coverage action failure
+- **formatting**: fix formatting issue
+- **formatting**: fix formatting issues
+- **workflows**: update actions and optimize checkout strategy
+- **rate_limit**: remove legacy rate limiter module
+- **attr**: fix incorrect attribute
+- **formatting**: formatting issue
+- **actions**: restrict release and ci triggers
+- **workflows**: update python version and optimize release actions
+- **variable**: fix naming mistake
+- **db**: optimize sqlalchemy session deletion logic
+
+### Refactor
+
+- **release**: consolidate release tasks and export cookie options
+- **crypto**: parameterize session token length and format config description
+- **deps**: reorganize project dependencies and groups
+- **routing**: update methods type hint to sequence
+- **routing**: update methods type hint to sequence
+- **rate_limit**: simplify reset_in calculation logic
+- **plugin**: remove redundant auth checks
+- **adapter**: optimize session deletion and coverage
+- **config**: setup commitizen and pre-commit

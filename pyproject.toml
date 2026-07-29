@@ -13,7 +13,7 @@ license-files = ["LICENSE"]
 name = "qulf"
 readme = "README.md"
 requires-python = ">=3.10"
-version = "0.1.0b2"
+version = "0.1.0b1"
 
 authors = [
   {name = "Kaleb Abebe", email = "kaleba647@gmail.com"},

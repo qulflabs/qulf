@@ -6,6 +6,8 @@ from qulf.config import DeletionStrategy
 from qulf.types import (
     Account,
     AccountCreate,
+    Permission,
+    Role,
     Session,
     User,
     UserCreate,
@@ -21,6 +23,13 @@ class DatabaseAdapter(ABC):
     web frameworks require non-blocking database queries to maintain high
     concurrent throughput during connection processing.
     """
+
+    def inject_custom_columns(self, custom_columns: dict[str, dict[str, type]]) -> None:
+        """
+        Dynamically injects plugin-requested columns into the database schema.
+        Expected format: {"user": {"two_factor_secret": str}, "session": {...}}
+        """
+        pass  # pragma: no cover
 
     @abstractmethod
     async def get_user_by_email_with_password(
@@ -143,9 +152,44 @@ class DatabaseAdapter(ABC):
         """
         pass  # pragma: no cover
 
-    def inject_custom_columns(self, custom_columns: dict[str, dict[str, type]]) -> None:
-        """
-        Dynamically injects plugin-requested columns into the database schema.
-        Expected format: {"user": {"two_factor_secret": str}, "session": {...}}
-        """
+    @abstractmethod
+    async def create_role(self, name: str, description: str | None = None) -> Role:
+        pass  # pragma: no cover
+
+    @abstractmethod
+    async def get_role_by_name(self, name: str) -> Role | None:
+        pass  # pragma: no cover
+
+    @abstractmethod
+    async def create_permission(
+        self, name: str, description: str | None = None
+    ) -> Permission:
+        pass  # pragma: no cover
+
+    @abstractmethod
+    async def get_permission_by_name(self, name: str) -> Permission | None:
+        pass  # pragma: no cover
+
+    @abstractmethod
+    async def assign_role_to_user(self, user_id: str | int, role_name: str) -> None:
+        pass  # pragma: no cover
+
+    @abstractmethod
+    async def remove_role_from_user(self, user_id: str | int, role_name: str) -> None:
+        pass  # pragma: no cover
+
+    @abstractmethod
+    async def grant_permission_to_role(
+        self, role_name: str, permission_name: str
+    ) -> None:
+        pass  # pragma: no cover
+
+    @abstractmethod
+    async def get_user_roles(self, user_id: str | int) -> list[Role]:
+        """Fetch all roles directly assigned to the user."""
+        pass  # pragma: no cover
+
+    @abstractmethod
+    async def get_user_permissions(self, user_id: str | int) -> list[Permission]:
+        """Fetch all unique permissions the user has through their assigned roles."""
         pass  # pragma: no cover

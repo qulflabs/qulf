@@ -1,9 +1,6 @@
 class QulfException(BaseException):
     """
     Base exception for all Qulf errors.
-
-    Inheriting from BaseException ensures that Qulf-specific domain errors
-    can be cleanly isolated and handled separately by adapter layers.
     """
 
     pass
@@ -23,8 +20,6 @@ class ConfigurationError(QulfException):
 class UserAlreadyExistsError(QulfException):
     """
     Raised when trying to sign up with an email that is already registered.
-
-    Prevents unauthorized account hijacking via registration forms.
     """
 
     pass
@@ -33,9 +28,13 @@ class UserAlreadyExistsError(QulfException):
 class AuthenticationError(QulfException):
     """
     Base class for authentication failures.
-
-    Allows catch-all logic for any generic credential or session validation failures.
     """
+
+    pass
+
+
+class AuthorizationError(QulfException):
+    """Raised when a user lacks the required role or permission."""
 
     pass
 

@@ -1,4 +1,5 @@
 import json
+from functools import wraps
 from typing import Any, Literal, cast
 
 from django.http import HttpRequest, JsonResponse
@@ -204,6 +205,33 @@ def serve_qulf(auth: Qulf) -> list[Any]:
                 async def dynamic_view(
                     request: HttpRequest, *args: Any, **kwargs: Any
                 ) -> JsonResponse:
+                    if qulf_route.require_roles or qulf_route.require_permissions:
+                        session_data = await auth.get_session_from_cookies(
+                            request.COOKIES
+                        )
+                        if not session_data:
+                            return JsonResponse(
+                                {"detail": "Authentication required"}, status=401
+                            )
+
+                        _, user = session_data
+
+                        for role in qulf_route.require_roles:
+                            if not await auth.has_role(user, role):
+                                return JsonResponse(
+                                    {"detail": f"Missing required role: '{role}'"},
+                                    status=403,
+                                )
+
+                        for perm in qulf_route.require_permissions:
+                            if not await auth.has_permission(user, perm):
+                                return JsonResponse(
+                                    {
+                                        "detail": "Missing required permission: "
+                                        f"'{perm}'"
+                                    },
+                                    status=403,
+                                )
                     body = {}
                     if request.method in ["POST", "PUT", "PATCH"]:
                         try:
@@ -259,3 +287,89 @@ def serve_qulf(auth: Qulf) -> list[Any]:
             )
 
     return urlpatterns
+
+
+def requires_role(
+    auth: Qulf, roles: str | list[str], mode: Literal["any", "all"] = "all"
+) -> Any:
+    """Django async decorator to protect views by Role."""
+    roles_list = [roles] if isinstance(roles, str) else roles
+
+    def decorator(view_func: Any) -> Any:
+        @wraps(view_func)
+        async def _wrapped_view(request: HttpRequest, *args: Any, **kwargs: Any) -> Any:
+            session_data = await auth.get_session_from_cookies(request.COOKIES)
+            if not session_data:
+                return JsonResponse({"detail": "Authentication required"}, status=401)
+
+            _, user = session_data
+
+            if mode == "all":
+                for role in roles_list:
+                    if not await auth.has_role(user, role):
+                        return JsonResponse(
+                            {"detail": f"Missing required role: '{role}'"}, status=403
+                        )
+            elif mode == "any":
+                has_any = False
+                for role in roles_list:
+                    if await auth.has_role(user, role):
+                        has_any = True
+                        break
+                if not has_any:
+                    return JsonResponse(
+                        {"detail": f"Requires at least one role from: {roles_list}"},
+                        status=403,
+                    )
+
+            request.qulf_user = user  # type: ignore
+            return await view_func(request, *args, **kwargs)
+
+        return _wrapped_view
+
+    return decorator
+
+
+def requires_permission(
+    auth: Qulf, permissions: str | list[str], mode: Literal["any", "all"] = "all"
+) -> Any:
+    """Django async decorator to protect views by Permission."""
+    perms_list = [permissions] if isinstance(permissions, str) else permissions
+
+    def decorator(view_func: Any) -> Any:
+        @wraps(view_func)
+        async def _wrapped_view(request: HttpRequest, *args: Any, **kwargs: Any) -> Any:
+            session_data = await auth.get_session_from_cookies(request.COOKIES)
+            if not session_data:
+                return JsonResponse({"detail": "Authentication required"}, status=401)
+
+            _, user = session_data
+
+            if mode == "all":
+                for perm in perms_list:
+                    if not await auth.has_permission(user, perm):
+                        return JsonResponse(
+                            {"detail": f"Missing required permission: '{perm}'"},
+                            status=403,
+                        )
+            elif mode == "any":
+                has_any = False
+                for perm in perms_list:
+                    if await auth.has_permission(user, perm):
+                        has_any = True
+                        break
+                if not has_any:
+                    return JsonResponse(
+                        {
+                            "detail": "Requires at least one permission from: "
+                            f"{perms_list}"
+                        },
+                        status=403,
+                    )
+
+            request.qulf_user = user  # type: ignore
+            return await view_func(request, *args, **kwargs)
+
+        return _wrapped_view
+
+    return decorator

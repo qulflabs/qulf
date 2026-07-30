@@ -3,11 +3,14 @@ from typing import Any
 
 from sqlalchemy import (
     Boolean,
+    Column,
     DateTime,
     ForeignKey,
     Integer,
     String,
+    Table,
     delete,
+    insert,
     select,
     update,
 )
@@ -21,6 +24,8 @@ from qulf.types import (
 )
 from qulf.types import (
     AccountCreate,
+    Permission,
+    Role,
     UserCreate,
     UserWithPassword,
 )
@@ -129,6 +134,62 @@ class DefaultAccount(QulfBase, AccountMixin):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
 
 
+# Mapping table users <-> roles
+user_roles = Table(
+    "user_roles",
+    QulfBase.metadata,
+    Column(
+        "user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    ),
+    Column(
+        "role_id", Integer, ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True
+    ),
+)
+
+# Mapping table roles <-> permissions
+role_permissions = Table(
+    "role_permissions",
+    QulfBase.metadata,
+    Column(
+        "role_id", Integer, ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True
+    ),
+    Column(
+        "permission_id",
+        Integer,
+        ForeignKey("permissions.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+)
+
+
+class RoleMixin:
+    name: Mapped[str] = mapped_column(String, unique=True, index=True)
+    description: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class PermissionMixin:
+    name: Mapped[str] = mapped_column(String, unique=True, index=True)
+    description: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class DefaultRole(QulfBase, RoleMixin):
+    __tablename__ = "roles"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+
+
+class DefaultPermission(QulfBase, PermissionMixin):
+    __tablename__ = "permissions"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+
+
 class SQLAlchemyAdapter(DatabaseAdapter):
     """
     Concrete DatabaseAdapter subclass leveraging SQLAlchemy 2.0 async capabilities.
@@ -140,16 +201,22 @@ class SQLAlchemyAdapter(DatabaseAdapter):
         user_model: Any = DefaultUser,
         session_model: Any = DefaultSession,
         account_model: Any = DefaultAccount,
+        role_model: Any = DefaultRole,
+        permission_model: Any = DefaultPermission,
     ):
         self.session_maker = session_maker
         self.user_model = user_model
         self.session_model = session_model
         self.account_model = account_model
+        self.role_model = role_model
+        self.permission_model = permission_model
 
         self.models = {
             "user": self.user_model,
             "session": self.session_model,
             "account": self.account_model,
+            "role": self.role_model,
+            "permission": self.permission_model,
         }
 
     def inject_custom_columns(self, custom_columns: dict[str, dict[str, Any]]) -> None:
@@ -157,10 +224,10 @@ class SQLAlchemyAdapter(DatabaseAdapter):
 
         # Iterate dynamically over ANY table the plugins request
         for table_name, columns in custom_columns.items():
-            # Check if Qulf actually manages this table
+            # Check if Qulf manages table
             model = self.models.get(table_name)
             if not model:
-                continue  # Ignore if  plugin tries to inject into a table we don't know
+                continue  # Ignore if plugin tries to inject into a table we don't know
 
             for col_name, col_type in columns.items():
                 if not hasattr(model, col_name):
@@ -389,3 +456,159 @@ class SQLAlchemyAdapter(DatabaseAdapter):
             if not db_account:
                 return None
             return QulfAccountType.model_validate(db_account, from_attributes=True)
+
+    async def create_role(self, name: str, description: str | None = None) -> Role:
+        """Create a new role in the roles table."""
+        async with self.session_maker() as session:
+            new_role = self.role_model(
+                name=name,
+                description=description,
+                created_at=datetime.now(timezone.utc),
+            )
+            session.add(new_role)
+            await session.commit()
+            await session.refresh(new_role)
+            return Role.model_validate(new_role, from_attributes=True)
+
+    async def get_role_by_name(self, name: str) -> Role | None:
+        """Fetch a role by its unique name."""
+        async with self.session_maker() as session:
+            stmt = select(self.role_model).where(self.role_model.name == name)
+            result = await session.execute(stmt)
+            db_role = result.scalar_one_or_none()
+            return (
+                Role.model_validate(db_role, from_attributes=True) if db_role else None
+            )
+
+    async def create_permission(
+        self, name: str, description: str | None = None
+    ) -> Permission:
+        """Create a new permission in the permissions table."""
+        async with self.session_maker() as session:
+            new_permission = self.permission_model(
+                name=name,
+                description=description,
+                created_at=datetime.now(timezone.utc),
+            )
+            session.add(new_permission)
+            await session.commit()
+            await session.refresh(new_permission)
+            return Permission.model_validate(new_permission, from_attributes=True)
+
+    async def get_permission_by_name(self, name: str) -> Permission | None:
+        """Fetch a permission by its unique name."""
+        async with self.session_maker() as session:
+            stmt = select(self.permission_model).where(
+                self.permission_model.name == name
+            )
+            result = await session.execute(stmt)
+            db_permission = result.scalar_one_or_none()
+            return (
+                Permission.model_validate(db_permission, from_attributes=True)
+                if db_permission
+                else None
+            )
+
+    async def assign_role_to_user(self, user_id: str | int, role_name: str) -> None:
+        """Link a user to a role via the user_roles mapping table."""
+        async with self.session_maker() as session:
+            # 1. Fetch the role by name to get its ID
+            stmt = select(self.role_model.id).where(self.role_model.name == role_name)
+            result = await session.execute(stmt)
+            role_id = result.scalar_one_or_none()
+
+            if not role_id:
+                raise ValueError(f"Role '{role_name}' does not exist.")
+
+            try:
+                await session.execute(
+                    insert(user_roles).values(user_id=user_id, role_id=role_id)
+                )
+                await session.commit()
+            except Exception:
+                pass  # Already assigned
+
+    async def remove_role_from_user(self, user_id: str | int, role_name: str) -> None:
+        """Remove a link from the user_roles mapping table."""
+        async with self.session_maker() as session:
+            # 1. Get role_id
+            stmt = select(self.role_model.id).where(self.role_model.name == role_name)
+            role_id = (await session.execute(stmt)).scalar_one_or_none()
+
+            if role_id:
+                # 2. Delete from mapping table
+                await session.execute(
+                    delete(user_roles).where(
+                        user_roles.c.user_id == user_id, user_roles.c.role_id == role_id
+                    )
+                )
+                await session.commit()
+
+    async def grant_permission_to_role(
+        self, role_name: str, permission_name: str
+    ) -> None:
+        """Link a permission to a role via the role_permissions table."""
+        async with self.session_maker() as session:
+            # 1. Fetch the role by name to get its ID
+            role_stmt = select(self.role_model.id).where(
+                self.role_model.name == role_name
+            )
+            result = await session.execute(role_stmt)
+            role_id = result.scalar_one_or_none()
+
+            if not role_id:
+                raise ValueError(f"Role '{role_name}' does not exist.")
+
+            # 1. Fetch the role by name to get its ID
+            perm_stmt = select(self.permission_model.id).where(
+                self.permission_model.name == permission_name
+            )
+            result = await session.execute(perm_stmt)
+            permission_id = result.scalar_one_or_none()
+
+            if not permission_id:
+                raise ValueError(f"Permission '{permission_name}' does not exist.")
+
+            try:
+                await session.execute(
+                    insert(role_permissions).values(
+                        permission_id=permission_id, role_id=role_id
+                    )
+                )
+                await session.commit()
+            except Exception:
+                pass  # Already assigned
+
+    async def get_user_roles(self, user_id: str | int) -> list[Role]:
+        """Fetch all roles directly assigned to a user."""
+        async with self.session_maker() as session:
+            stmt = (
+                select(self.role_model)
+                .join(user_roles, self.role_model.id == user_roles.c.role_id)
+                .where(user_roles.c.user_id == user_id)
+            )
+            result = await session.execute(stmt)
+            return [
+                Role.model_validate(r, from_attributes=True)
+                for r in result.scalars().all()
+            ]
+
+    async def get_user_permissions(self, user_id: str | int) -> list[Permission]:
+        """Fetch all unique permissions the user has through their assigned roles."""
+        async with self.session_maker() as session:
+            stmt = (
+                select(self.permission_model)
+                .join(
+                    role_permissions,
+                    self.permission_model.id == role_permissions.c.permission_id,
+                )
+                .join(self.role_model, self.role_model.id == role_permissions.c.role_id)
+                .join(user_roles, self.role_model.id == user_roles.c.role_id)
+                .where(user_roles.c.user_id == user_id)
+                .distinct()  # strip duplicates
+            )
+            result = await session.execute(stmt)
+            return [
+                Permission.model_validate(p, from_attributes=True)
+                for p in result.scalars().all()
+            ]

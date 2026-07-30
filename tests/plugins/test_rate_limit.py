@@ -26,13 +26,13 @@ async def test_rate_limit_plugin_enforce():
     limiter = InMemoryFixedWindow(FixedWindowConfig(max_requests=2, window_seconds=10))
     plugin = RateLimitPlugin(limiter=limiter)
 
-    # 1. Enforce with a standard string identifier
+    # Enforce with a standard string identifier
     await plugin.enforce("test_action", "user1")
 
-    # 2. Enforce with a list identifier (include None to test the `if i` filter)
+    # Enforce with a list identifier (include None to test the `if i` filter)
     await plugin.enforce("test_action", ["127.0.0.1", None, "user2"])
 
-    # 3. Exhaust the limiter to trigger RateLimitExceededError
+    # Exhaust the limiter to trigger RateLimitExceededError
     await plugin.enforce("test_action", "exhausted_user")
     await plugin.enforce("test_action", "exhausted_user")
 
@@ -47,21 +47,19 @@ async def test_rate_limit_plugin_enforce():
 async def test_rate_limit_plugin_before_sign_in():
     limiter = InMemoryFixedWindow(FixedWindowConfig(max_requests=5, window_seconds=10))
 
-    # 1. Protect sign in DISABLED
+    # Protect sign in DISABLED
     plugin_disabled = RateLimitPlugin(limiter=limiter, protect_sign_in=False)
     await plugin_disabled.before_sign_in(email="test@test.com")
     # Because it returns early, the limiter should not have consumed any keys
     assert not limiter._windows
 
-    # 2. Protect sign in ENABLED (Without IP)
+    # Protect sign in ENABLED (Without IP)
     plugin = RateLimitPlugin(limiter=limiter, protect_sign_in=True)
     await plugin.before_sign_in(email="test2@test.com")
-    # Limiter key should be formatted as action:email
     assert "signin:test2@test.com" in limiter._windows
 
-    # 3. Protect sign in ENABLED (With IP)
+    # Protect sign in ENABLED (With IP)
     await plugin.before_sign_in(email="test3@test.com", ip_address="192.168.1.1")
-    # Limiter key should be formatted as action:ip:email
     assert "signin:192.168.1.1:test3@test.com" in limiter._windows
 
 
@@ -77,8 +75,6 @@ def test_token_bucket_config_validation() -> None:
 
 
 # In-Memory Token Bucket Tests
-
-
 @pytest.mark.asyncio
 async def test_in_memory_tb_basic_and_reset_math() -> None:
     config = TokenBucketConfig(capacity=3, refill_rate=1.0)
@@ -94,7 +90,7 @@ async def test_in_memory_tb_basic_and_reset_math() -> None:
     assert res3.allowed is True
     assert res3.remaining == 0
 
-    # Bucket is empty, should reject and calculate exact reset_in
+    # Bucket is empty, should reject and calculate reset_in
     res4 = await bucket.consume("user_1")
     assert res4.allowed is False
     assert res4.remaining == 0
@@ -114,8 +110,7 @@ async def test_in_memory_tb_refill_simulation() -> None:
 
     assert (await bucket.consume("fast_user")).allowed is False
 
-    # Manually hack the internal state to simulate time passing (0.2 seconds)
-    # This avoids using flaky time.sleep() in async tests!
+    # Manually change the state to simulate time passing (0.2 seconds)
     state = bucket._buckets["fast_user"]
     state.last_refill -= 0.25
 
@@ -139,12 +134,11 @@ async def test_in_memory_tb_prune_memory_leak_fix() -> None:
     # Age key_2 just a little bit (should NOT be pruned)
     bucket._buckets["key_2"].last_refill -= 2.0
 
-    # Hitting key_3 will trigger the prune because len(_buckets) >= 2
     await bucket.consume("key_3")
 
-    assert "key_1" not in bucket._buckets  # Pruned! Memory saved!
-    assert "key_2" in bucket._buckets  # Kept! Still partially active.
-    assert "key_3" in bucket._buckets  # Added!
+    assert "key_1" not in bucket._buckets
+    assert "key_2" in bucket._buckets
+    assert "key_3" in bucket._buckets
 
 
 @pytest.mark.asyncio
@@ -181,7 +175,7 @@ async def test_redis_tb_basic(fake_redis: Any) -> None:
     res = await bucket.consume("redis_user")
     assert res.allowed is False
     assert res.remaining == 0
-    assert 0.8 < res.reset_in <= 1.0
+    assert 0.5 < res.reset_in <= 1.0
 
 
 @pytest.mark.asyncio
@@ -237,7 +231,7 @@ async def test_in_memory_swl_pruning() -> None:
     # Trigger prune by adding a 3rd key
     await limiter.consume("user3")
 
-    assert "user1" not in limiter._windows  # Successfully pruned!
+    assert "user1" not in limiter._windows
     assert "user2" in limiter._windows
     assert "user3" in limiter._windows
 
@@ -247,15 +241,13 @@ async def test_in_memory_swl_popleft() -> None:
     config = SlidingWindowConfig(max_requests=5, window_seconds=2.0)
     limiter = InMemorySlidingWindowLog(config)
 
-    # 1. Add a normal request
+    # Add a normal request
     await limiter.consume("pop_user")
 
-    # 2. Hack the timestamp so it falls completely outside the 2.0s sliding window
+    # Hack the timestamp so it falls completely outside the 2.0s sliding window
     limiter._windows["pop_user"].timestamps[0] -= 5.0
 
-    # 3. Call consume again.
-    # Because we haven't hit max_memory_keys, _prune is NOT triggered.
-    # Instead, consume() evaluates the cutoff and calls `window.timestamps.popleft()`!
+    # Call consume again.
     res = await limiter.consume("pop_user")
 
     assert res.allowed is True

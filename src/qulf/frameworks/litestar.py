@@ -1,7 +1,8 @@
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from litestar import Request, Response, Router, delete, post, route
 from litestar.datastructures import Cookie
+from litestar.exceptions import NotAuthorizedException, PermissionDeniedException
 from litestar.types import Method
 
 from qulf.core import Qulf
@@ -30,7 +31,7 @@ def serve_qulf(auth: Qulf) -> Router:
 
         validated_session = await auth.validate_session(token)
         if validated_session:
-            session, user = validated_session
+            _, user = validated_session
             return str(user.id)
         raise QulfException("Unauthorized")
 
@@ -148,6 +149,31 @@ def serve_qulf(auth: Qulf) -> Router:
                 async def dynamic_endpoint(
                     request: Request[Any, Any, Any],
                 ) -> Response[Any]:
+                    if route_def.require_roles or route_def.require_permissions:
+                        from litestar.exceptions import (
+                            NotAuthorizedException,
+                            PermissionDeniedException,
+                        )
+
+                        session_data = await auth.get_session_from_cookies(
+                            request.cookies
+                        )
+                        if not session_data:
+                            raise NotAuthorizedException("Authentication required")
+
+                        _, user = session_data
+
+                        for role in route_def.require_roles:
+                            if not await auth.has_role(user, role):
+                                raise PermissionDeniedException(
+                                    f"Missing required role: '{role}'"
+                                )
+
+                        for perm in route_def.require_permissions:
+                            if not await auth.has_permission(user, perm):
+                                raise PermissionDeniedException(
+                                    f"Missing required permission: '{perm}'"
+                                )
                     body = {}
                     if request.method in ["POST", "PUT", "PATCH"]:
                         try:
@@ -213,3 +239,85 @@ def serve_qulf(auth: Qulf) -> Router:
         ]
         + plugin_routes,
     )
+
+
+class RequiresRole:
+    """
+    Litestar Dependency to protect native framework routes by Role via `Provide()`.
+    """
+
+    def __init__(
+        self, auth: Qulf, roles: str | list[str], mode: Literal["any", "all"] = "all"
+    ):
+        self.auth = auth
+        self.roles = [roles] if isinstance(roles, str) else roles
+        self.mode = mode
+
+    async def __call__(self, request: Request[Any, Any, Any]) -> User:
+        session_data = await self.auth.get_session_from_cookies(request.cookies)
+        if not session_data:
+            raise NotAuthorizedException("Authentication required")
+
+        _, user = session_data
+
+        if self.mode == "all":
+            for role in self.roles:
+                if not await self.auth.has_role(user, role):
+                    raise PermissionDeniedException(f"Missing required role: '{role}'")
+        elif self.mode == "any":
+            has_any = False
+            for role in self.roles:
+                if await self.auth.has_role(user, role):
+                    has_any = True
+                    break
+            if not has_any:
+                raise PermissionDeniedException(
+                    f"Requires at least one role from: {self.roles}"
+                )
+
+        return user
+
+
+class RequiresPermission:
+    """
+    Litestar Dependency to protect native framework routes
+    by Permission via `Provide()`.
+    """
+
+    def __init__(
+        self,
+        auth: Qulf,
+        permissions: str | list[str],
+        mode: Literal["any", "all"] = "all",
+    ):
+        self.auth = auth
+        self.permissions = (
+            [permissions] if isinstance(permissions, str) else permissions
+        )
+        self.mode = mode
+
+    async def __call__(self, request: Request[Any, Any, Any]) -> User:
+        session_data = await self.auth.get_session_from_cookies(request.cookies)
+        if not session_data:
+            raise NotAuthorizedException("Authentication required")
+
+        _, user = session_data
+
+        if self.mode == "all":
+            for perm in self.permissions:
+                if not await self.auth.has_permission(user, perm):
+                    raise PermissionDeniedException(
+                        f"Missing required permission: '{perm}'"
+                    )
+        elif self.mode == "any":
+            has_any = False
+            for perm in self.permissions:
+                if await self.auth.has_permission(user, perm):
+                    has_any = True
+                    break
+            if not has_any:
+                raise PermissionDeniedException(
+                    f"Requires at least one permission from: {self.permissions}"
+                )
+
+        return user

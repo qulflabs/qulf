@@ -2,7 +2,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class HttpMethod(str, Enum):
@@ -63,3 +63,5 @@ class QulfRoute(BaseModel):
     # The handler must be an async function that takes a
     # QulfRequest and returns a QulfResponse
     handler: Callable[[QulfRequest], Awaitable[QulfResponse]]
+    require_roles: list[str] = Field(default_factory=list)
+    require_permissions: list[str] = Field(default_factory=list)

@@ -373,3 +373,37 @@ class Qulf:
             raise QulfException("User not found or account deactivated")
         strategy = self.config.deletion.get_strategy("user")
         return await self.db.delete_user(str(user.id), strategy)
+
+    # RBAC methods
+    async def has_role(self, user: User, role_name: str) -> bool:
+        """Check if a user has a specific role (with per-request caching)."""
+        if user.roles is None:
+            user.roles = await self.db.get_user_roles(user.id)
+
+        return any(r.name == role_name for r in user.roles)
+
+    async def has_permission(self, user: User, permission_name: str) -> bool:
+        """
+        Check if a user has a specific permission
+        via their roles (with per-request caching).
+        """
+        if user.permissions is None:
+            user.permissions = await self.db.get_user_permissions(user.id)
+
+        return any(p.name == permission_name for p in user.permissions)
+
+    async def require_role(self, user: User, role_name: str) -> None:
+        """Enforce role requirement. Raises AuthorizationError if missing."""
+        if not await self.has_role(user, role_name):
+            from qulf.exceptions import AuthorizationError
+
+            raise AuthorizationError(f"User lacks required role: '{role_name}'")
+
+    async def require_permission(self, user: User, permission_name: str) -> None:
+        """Enforce permission requirement. Raises AuthorizationError if missing."""
+        if not await self.has_permission(user, permission_name):
+            from qulf.exceptions import AuthorizationError
+
+            raise AuthorizationError(
+                f"User lacks required permission: '{permission_name}'"
+            )

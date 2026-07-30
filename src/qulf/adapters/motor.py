@@ -8,7 +8,7 @@ from motor.motor_asyncio import AsyncIOMotorCollection, AsyncIOMotorDatabase
 from qulf.adapters.base import DatabaseAdapter
 from qulf.config import DeletionStrategy
 from qulf.types import Account as QulfAccountType
-from qulf.types import AccountCreate, UserCreate, UserWithPassword
+from qulf.types import AccountCreate, Permission, Role, UserCreate, UserWithPassword
 from qulf.types import Session as QulfSessionType
 from qulf.types import User as QulfUserType
 
@@ -36,6 +36,8 @@ class MotorAdapter(DatabaseAdapter):
         self.users: AsyncIOMotorCollection[dict[str, Any]] = db.users
         self.sessions: AsyncIOMotorCollection[dict[str, Any]] = db.sessions
         self.accounts: AsyncIOMotorCollection[dict[str, Any]] = db.accounts
+        self.roles: AsyncIOMotorCollection[dict[str, Any]] = db.roles
+        self.permissions: AsyncIOMotorCollection[dict[str, Any]] = db.permissions
 
     @staticmethod
     def _id_to_str(doc: dict[str, Any]) -> dict[str, Any]:
@@ -63,6 +65,22 @@ class MotorAdapter(DatabaseAdapter):
 
     def _to_account(self, doc: dict[str, Any]) -> QulfAccountType:
         return QulfAccountType.model_validate(self._id_to_str(doc))
+
+    def _to_role(self, doc: dict[str, Any]) -> Role:
+        return Role.model_validate(self._id_to_str(doc))
+
+    def _to_permission(self, doc: dict[str, Any]) -> Permission:
+        return Permission.model_validate(self._id_to_str(doc))
+
+    # Schema injection (no-op for MongoDB)
+    def inject_custom_columns(self, custom_columns: dict[str, dict[str, type]]) -> None:
+        """
+        No-op for MongoDB.
+
+        MongoDB is schema-less; additional fields are stored automatically
+        without any pre-declaration or migration.
+        """
+        pass  # pragma: no cover
 
     # User operations
     async def get_user_by_email(self, email: str) -> UserWithPassword | None:
@@ -233,12 +251,95 @@ class MotorAdapter(DatabaseAdapter):
             return None
         return self._to_account(doc)
 
-    # Schema injection (no-op for MongoDB)
-    def inject_custom_columns(self, custom_columns: dict[str, dict[str, type]]) -> None:
-        """
-        No-op for MongoDB.
+    async def create_permission(
+        self, name: str, description: str | None = None
+    ) -> Permission:
+        doc = {
+            "name": name,
+            "description": description,
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": None,
+        }
+        result = await self.permissions.insert_one(doc)
+        doc["_id"] = result.inserted_id
+        return self._to_permission(doc)
 
-        MongoDB is schema-less; additional fields are stored automatically
-        without any pre-declaration or migration.
-        """
-        pass  # pragma: no cover
+    async def get_permission_by_name(self, name: str) -> Permission | None:
+        doc = await self.permissions.find_one({"name": name})
+        return self._to_permission(doc) if doc else None
+
+    async def create_role(self, name: str, description: str | None = None) -> Role:
+        doc = {
+            "name": name,
+            "description": description,
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": None,
+        }
+        result = await self.roles.insert_one(doc)
+        doc["_id"] = result.inserted_id
+        return self._to_role(doc)
+
+    async def get_role_by_name(self, name: str) -> Role | None:
+        doc = await self.roles.find_one({"name": name})
+        return self._to_role(doc) if doc else None
+
+    async def assign_role_to_user(self, user_id: str | int, role_name: str) -> None:
+        # Verify role exists
+        if not await self.roles.find_one({"name": role_name}):
+            raise ValueError(f"Role '{role_name}' does not exist.")
+
+        uid = self._to_object_id(user_id)
+        await self.users.update_one({"_id": uid}, {"$addToSet": {"roles": role_name}})
+
+    async def remove_role_from_user(self, user_id: str | int, role_name: str) -> None:
+        uid = self._to_object_id(user_id)
+        await self.users.update_one({"_id": uid}, {"$pull": {"roles": role_name}})
+
+    async def grant_permission_to_role(
+        self, role_name: str, permission_name: str
+    ) -> None:
+        # Verify permission exists
+        if not await self.permissions.find_one({"name": permission_name}):
+            raise ValueError(f"Permission '{permission_name}' does not exist.")
+
+        result = await self.roles.update_one(
+            {"name": role_name}, {"$addToSet": {"permissions": permission_name}}
+        )
+        if result.matched_count == 0:
+            raise ValueError(f"Role '{role_name}' does not exist.")
+
+    async def get_user_roles(self, user_id: str | int) -> list[Role]:
+        uid = self._to_object_id(user_id)
+        user_doc = await self.users.find_one({"_id": uid}, {"roles": 1})
+
+        if not user_doc or not user_doc.get("roles"):
+            return []
+
+        cursor = self.roles.find({"name": {"$in": user_doc["roles"]}})
+        roles = await cursor.to_list(length=None)
+
+        return [self._to_role(r) for r in roles]
+
+    async def get_user_permissions(self, user_id: str | int) -> list[Permission]:
+        uid = self._to_object_id(user_id)
+        user_doc = await self.users.find_one({"_id": uid}, {"roles": 1})
+
+        if not user_doc or not user_doc.get("roles"):
+            return []
+
+        roles_cursor = self.roles.find(
+            {"name": {"$in": user_doc["roles"]}}, {"permissions": 1}
+        )
+        roles = await roles_cursor.to_list(length=None)
+
+        perm_names = set()
+        for r in roles:
+            perm_names.update(r.get("permissions", []))
+
+        if not perm_names:
+            return []
+
+        perms_cursor = self.permissions.find({"name": {"$in": list(perm_names)}})
+        perms = await perms_cursor.to_list(length=None)
+
+        return [self._to_permission(p) for p in perms]

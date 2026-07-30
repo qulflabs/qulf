@@ -2,9 +2,10 @@ from datetime import datetime, timezone
 from typing import Any, ClassVar
 
 from sqlalchemy import Boolean, Integer, String, delete
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import mapped_column
-from sqlmodel import Field, SQLModel, select
+from sqlmodel import Field, SQLModel, col, select
 
 from qulf.adapters.base import DatabaseAdapter
 from qulf.config import DeletionStrategy
@@ -13,6 +14,8 @@ from qulf.types import (
 )
 from qulf.types import (
     AccountCreate,
+    Permission,
+    Role,
     UserCreate,
     UserWithPassword,
 )
@@ -94,6 +97,40 @@ class DefaultAccount(AccountMixin, table=True):
     user_id: int = Field(foreign_key="users.id")
 
 
+# --- RBAC Link Models (Many-to-Many) ---
+
+
+class UserRoleLink(SQLModel, table=True):
+    __tablename__: ClassVar[Any] = "user_roles"
+    user_id: int = Field(foreign_key="users.id", primary_key=True)
+    role_id: int = Field(foreign_key="roles.id", primary_key=True)
+
+
+class RolePermissionLink(SQLModel, table=True):
+    __tablename__: ClassVar[Any] = "role_permissions"
+    role_id: int = Field(foreign_key="roles.id", primary_key=True)
+    permission_id: int = Field(foreign_key="permissions.id", primary_key=True)
+
+
+# RBAC Default Models
+class DefaultRole(SQLModel, table=True):
+    __tablename__: ClassVar[Any] = "roles"
+    id: int | None = Field(default=None, primary_key=True)
+    name: str = Field(unique=True, index=True)
+    description: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime | None = None
+
+
+class DefaultPermission(SQLModel, table=True):
+    __tablename__: ClassVar[Any] = "permissions"
+    id: int | None = Field(default=None, primary_key=True)
+    name: str = Field(unique=True, index=True)
+    description: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime | None = None
+
+
 class SQLModelAdapter(DatabaseAdapter):
     """
     Concrete DatabaseAdapter subclass leveraging SQLModel (and SQLAlchemy 2.0).
@@ -105,16 +142,22 @@ class SQLModelAdapter(DatabaseAdapter):
         user_model: Any = DefaultUser,
         session_model: Any = DefaultSession,
         account_model: Any = DefaultAccount,
+        role_model: Any = DefaultRole,
+        permission_model: Any = DefaultPermission,
     ):
         self.session_maker = session_maker
         self.user_model = user_model
         self.session_model = session_model
         self.account_model = account_model
+        self.role_model = role_model
+        self.permission_model = permission_model
 
         self.models = {
             "user": self.user_model,
             "session": self.session_model,
             "account": self.account_model,
+            "role_model": self.role_model,
+            "permission_model": self.permission_model,
         }
 
     def inject_custom_columns(self, custom_columns: dict[str, dict[str, Any]]) -> None:
@@ -346,3 +389,148 @@ class SQLModelAdapter(DatabaseAdapter):
             if not db_account:
                 return None
             return QulfAccountType.model_validate(db_account, from_attributes=True)
+
+    # ROlES & PERMISSIONS:
+    async def create_role(self, name: str, description: str | None = None) -> Role:
+        async with self.session_maker() as session:
+            new_role = self.role_model(
+                name=name,
+                description=description,
+                created_at=datetime.now(timezone.utc),
+            )
+            session.add(new_role)
+            await session.commit()
+            await session.refresh(new_role)
+            return Role.model_validate(new_role, from_attributes=True)
+
+    async def get_role_by_name(self, name: str) -> Role | None:
+        async with self.session_maker() as session:
+            stmt = select(self.role_model).where(self.role_model.name == name)
+            result = await session.execute(stmt)
+            db_role = result.scalar_one_or_none()
+            return (
+                Role.model_validate(db_role, from_attributes=True) if db_role else None
+            )
+
+    async def create_permission(
+        self, name: str, description: str | None = None
+    ) -> Permission:
+        async with self.session_maker() as session:
+            new_perm = self.permission_model(
+                name=name,
+                description=description,
+                created_at=datetime.now(timezone.utc),
+            )
+            session.add(new_perm)
+            await session.commit()
+            await session.refresh(new_perm)
+            return Permission.model_validate(new_perm, from_attributes=True)
+
+    async def get_permission_by_name(self, name: str) -> Permission | None:
+        async with self.session_maker() as session:
+            stmt = select(self.permission_model).where(
+                self.permission_model.name == name
+            )
+            result = await session.execute(stmt)
+            db_perm = result.scalar_one_or_none()
+            return (
+                Permission.model_validate(db_perm, from_attributes=True)
+                if db_perm
+                else None
+            )
+
+    async def assign_role_to_user(self, user_id: str | int, role_name: str) -> None:
+        async with self.session_maker() as session:
+            stmt = select(self.role_model.id).where(self.role_model.name == role_name)
+            result = await session.execute(stmt)
+            role_id = result.scalar_one_or_none()
+
+            if not role_id:
+                raise ValueError(f"Role '{role_name}' does not exist.")
+
+            # Create the link model instance
+            link = UserRoleLink(user_id=user_id, role_id=role_id)
+            session.add(link)
+            try:
+                await session.commit()
+            except IntegrityError:
+                # Already assigned, perfectly fine!
+                await session.rollback()
+
+    async def remove_role_from_user(self, user_id: str | int, role_name: str) -> None:
+        async with self.session_maker() as session:
+            stmt = select(self.role_model.id).where(self.role_model.name == role_name)
+            role_id = (await session.execute(stmt)).scalar_one_or_none()
+
+            if role_id:
+                await session.execute(
+                    delete(UserRoleLink).where(
+                        col(UserRoleLink.user_id) == user_id,
+                        col(UserRoleLink.role_id) == role_id,
+                    )
+                )
+                await session.commit()
+
+    async def grant_permission_to_role(
+        self, role_name: str, permission_name: str
+    ) -> None:
+        async with self.session_maker() as session:
+            role_id = (
+                await session.execute(
+                    select(self.role_model.id).where(self.role_model.name == role_name)
+                )
+            ).scalar_one_or_none()
+            if not role_id:
+                raise ValueError(f"Role '{role_name}' does not exist.")
+
+            perm_id = (
+                await session.execute(
+                    select(self.permission_model.id).where(
+                        self.permission_model.name == permission_name
+                    )
+                )
+            ).scalar_one_or_none()
+            if not perm_id:
+                raise ValueError(f"Permission '{permission_name}' does not exist.")
+
+            link = RolePermissionLink(role_id=role_id, permission_id=perm_id)
+            session.add(link)
+            try:
+                await session.commit()
+            except IntegrityError:
+                await session.rollback()
+
+    async def get_user_roles(self, user_id: str | int) -> list[Role]:
+        async with self.session_maker() as session:
+            stmt = (
+                select(self.role_model)
+                .join(UserRoleLink, self.role_model.id == col(UserRoleLink.role_id))
+                .where(col(UserRoleLink.user_id) == user_id)
+            )
+            result = await session.execute(stmt)
+            return [
+                Role.model_validate(r, from_attributes=True)
+                for r in result.scalars().all()
+            ]
+
+    async def get_user_permissions(self, user_id: str | int) -> list[Permission]:
+        async with self.session_maker() as session:
+            stmt = (
+                select(self.permission_model)
+                .join(
+                    RolePermissionLink,
+                    self.permission_model.id == col(RolePermissionLink.permission_id),
+                )
+                .join(
+                    self.role_model,
+                    self.role_model.id == col(RolePermissionLink.role_id),
+                )
+                .join(UserRoleLink, self.role_model.id == col(UserRoleLink.role_id))
+                .where(col(UserRoleLink.user_id) == user_id)
+                .distinct()
+            )
+            result = await session.execute(stmt)
+            return [
+                Permission.model_validate(p, from_attributes=True)
+                for p in result.scalars().all()
+            ]

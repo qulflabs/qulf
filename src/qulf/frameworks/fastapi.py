@@ -1,5 +1,5 @@
 from collections.abc import Awaitable, Callable, Coroutine
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request, Response
 
@@ -39,7 +39,7 @@ def serve_qulf(auth: Qulf) -> APIRouter:
         try:
             validated_session = await auth.validate_session(token)
             if validated_session:
-                session, user = validated_session
+                _, user = validated_session
                 return str(user.id)
             raise HTTPException(status_code=401, detail="Unauthorized")
         except QulfException as e:
@@ -134,14 +134,42 @@ def serve_qulf(auth: Qulf) -> APIRouter:
         response.delete_cookie(key=auth.config.cookies.name, path="/")
         return {"message": "Account deleted successfully"}
 
-    # AUTHENTICATED ROUTES
+    # PLUGIN ROUTES
     for plugin in auth.plugins.values():
         for qulf_route in plugin.get_routes():
 
-            def make_endpoint(handler: Handler) -> Endpoint:
+            def make_endpoint(handler: Handler, route_config: Any) -> Endpoint:
                 async def dynamic_endpoint(
                     request: Request, response: Response
                 ) -> dict[str, Any] | None:
+
+                    # RBAC ENFORCEMENT
+                    if route_config.require_roles or route_config.require_permissions:
+                        session_data = await auth.get_session_from_cookies(
+                            request.cookies
+                        )
+                        if not session_data:
+                            raise HTTPException(
+                                status_code=401, detail="Authentication required"
+                            )
+
+                        _, user = session_data
+
+                        for role in route_config.require_roles:
+                            if not await auth.has_role(user, role):
+                                raise HTTPException(
+                                    status_code=403,
+                                    detail=f"Missing required role: '{role}'",
+                                )
+
+                        for perm in route_config.require_permissions:
+                            if not await auth.has_permission(user, perm):
+                                raise HTTPException(
+                                    status_code=403,
+                                    detail=f"Missing required permission: '{perm}'",
+                                )
+
+                    # parsing
                     body = {}
                     if request.method in ["POST", "PUT", "PATCH"]:
                         try:
@@ -184,8 +212,91 @@ def serve_qulf(auth: Qulf) -> APIRouter:
             methods = [method.value for method in qulf_route.methods]
             router.add_api_route(
                 path=qulf_route.path,
-                endpoint=make_endpoint(qulf_route.handler),
+                endpoint=make_endpoint(qulf_route.handler, qulf_route),
                 methods=methods,
             )
 
     return router
+
+
+class RequiresRole:
+    """FastAPI Dependency to protect native framework routes by Role."""
+
+    def __init__(
+        self, auth: Qulf, roles: str | list[str], mode: Literal["any", "all"] = "all"
+    ):
+        self.auth = auth
+        self.roles = [roles] if isinstance(roles, str) else roles
+        self.mode = mode
+
+    async def __call__(self, request: Request) -> User:
+        session_data = await self.auth.get_session_from_cookies(request.cookies)
+        if not session_data:
+            raise HTTPException(status_code=401, detail="Authentication required")
+
+        _, user = session_data
+
+        if self.mode == "all":
+            for role in self.roles:
+                if not await self.auth.has_role(user, role):
+                    raise HTTPException(
+                        status_code=403, detail=f"Missing required role: '{role}'"
+                    )
+
+        elif self.mode == "any":
+            has_any = False
+            for role in self.roles:
+                if await self.auth.has_role(user, role):
+                    has_any = True
+                    break
+            if not has_any:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Requires at least one role from: {self.roles}",
+                )
+
+        return user
+
+
+class RequiresPermission:
+    """FastAPI Dependency to protect native framework routes by Permission."""
+
+    def __init__(
+        self,
+        auth: Qulf,
+        permissions: str | list[str],
+        mode: Literal["any", "all"] = "all",
+    ):
+        self.auth = auth
+        self.permissions = (
+            [permissions] if isinstance(permissions, str) else permissions
+        )
+        self.mode = mode
+
+    async def __call__(self, request: Request) -> User:
+        session_data = await self.auth.get_session_from_cookies(request.cookies)
+        if not session_data:
+            raise HTTPException(status_code=401, detail="Authentication required")
+
+        _, user = session_data
+
+        if self.mode == "all":
+            for perm in self.permissions:
+                if not await self.auth.has_permission(user, perm):
+                    raise HTTPException(
+                        status_code=403, detail=f"Missing required permission: '{perm}'"
+                    )
+
+        elif self.mode == "any":
+            has_any = False
+            for perm in self.permissions:
+                if await self.auth.has_permission(user, perm):
+                    has_any = True
+                    break
+            if not has_any:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Requires at least one permission from: {self.permissions}",
+                )
+
+        return user

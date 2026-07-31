@@ -11,6 +11,8 @@ from qulf.core import Qulf
 from qulf.types import (
     Account,
     AccountCreate,
+    Permission,
+    Role,
     Session,
     User,
     UserCreate,
@@ -24,6 +26,10 @@ class MemoryAdapter(DatabaseAdapter):
         self.sessions: dict[str, Session] = {}
         self.accounts: dict[str, Account] = {}
         self._id_counter = 1
+        self.roles: dict[str, Role] = {}
+        self.permissions: dict[str, Permission] = {}
+        self.user_roles: dict[str, set[str]] = {}
+        self.role_permissions: dict[str, set[str]] = {}
 
     async def get_user_by_email(self, email: str) -> UserWithPassword | None:
         for u in self.users.values():
@@ -150,6 +156,79 @@ class MemoryAdapter(DatabaseAdapter):
     async def get_user_by_id_with_password(self, user_id: int | str):
         return self.users.get(str(user_id))
 
+    async def create_role(self, name: str, description: str | None = None) -> Role:
+        role = Role(
+            id=str(self._id_counter),
+            name=name,
+            description=description,
+            created_at=datetime.now(timezone.utc),
+            updated_at=None,
+        )
+        self.roles[name] = role
+        return role
+
+    async def get_role_by_name(self, name: str) -> Role | None:
+        return self.roles.get(name)
+
+    async def create_permission(
+        self, name: str, description: str | None = None
+    ) -> Permission:
+        permission = Permission(
+            id=str(self._id_counter),
+            name=name,
+            description=description,
+            created_at=datetime.now(timezone.utc),
+            updated_at=None,
+        )
+        self.permissions[name] = permission
+        return permission
+
+    async def get_permission_by_name(self, name: str) -> Permission | None:
+        return self.permissions.get(name)
+
+    async def assign_role_to_user(self, user_id: str | int, role_name: str) -> None:
+        if role_name not in self.roles:
+            raise ValueError(f"Role '{role_name}' does not exist.")
+
+        uid = str(user_id)
+        if uid not in self.user_roles:
+            self.user_roles[uid] = set()
+        self.user_roles[uid].add(role_name)
+
+    async def remove_role_from_user(self, user_id: str | int, role_name: str) -> None:
+        uid = str(user_id)
+        if uid in self.user_roles and role_name in self.user_roles[uid]:
+            self.user_roles[uid].remove(role_name)
+
+    async def grant_permission_to_role(
+        self, role_name: str, permission_name: str
+    ) -> None:
+        if role_name not in self.roles:
+            raise ValueError(f"Role '{role_name}' does not exist.")
+        if permission_name not in self.permissions:
+            raise ValueError(f"Permission '{permission_name}' does not exist.")
+
+        if role_name not in self.role_permissions:
+            self.role_permissions[role_name] = set()
+        self.role_permissions[role_name].add(permission_name)
+
+    async def get_user_roles(self, user_id: str | int) -> list[Role]:
+        uid = str(user_id)
+        role_names = self.user_roles.get(uid, set())
+        return [self.roles[name] for name in role_names if name in self.roles]
+
+    async def get_user_permissions(self, user_id: str | int) -> list[Permission]:
+        uid = str(user_id)
+        role_names = self.user_roles.get(uid, set())
+
+        perm_names = set()
+        for role in role_names:
+            perm_names.update(self.role_permissions.get(role, set()))
+
+        return [
+            self.permissions[name] for name in perm_names if name in self.permissions
+        ]
+
 
 @pytest.fixture
 def memory_db():
@@ -165,7 +244,7 @@ def auth(memory_db):
 
 
 @pytest_asyncio.fixture
-async def sqlite_adapter():
+async def sqlalchemy_adapter():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
 
     # Create the tables

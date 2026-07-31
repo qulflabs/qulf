@@ -11,12 +11,19 @@ if not settings.configured:
     settings.configure(DEFAULT_CHARSET="utf-8")
     django.setup()
 
+from django.http import JsonResponse
 from django.test import RequestFactory
 
 from qulf import CookieOptions, HttpMethod, QulfRequest, QulfResponse, QulfRoute
 from qulf.core import Qulf
 from qulf.exceptions import QulfException
-from qulf.frameworks.django import _get_client_ip, _get_user_agent, serve_qulf
+from qulf.frameworks.django import (
+    _get_client_ip,
+    _get_user_agent,
+    requires_permission,
+    requires_role,
+    serve_qulf,
+)
 
 
 # IP & User-Agent Helper Tests
@@ -426,3 +433,125 @@ async def test_django_sign_up_sign_in_exceptions(
         content_type="application/json",
     )
     assert (await views["sign-in"](req2)).status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_plugin_dynamic_routing_rbac(
+    rf: RequestFactory, mock_auth: MagicMock
+) -> None:
+    async def dummy_handler(request: QulfRequest) -> QulfResponse:
+        return QulfResponse(status_code=200, body={"msg": "ok"})
+
+    mock_plugin = MagicMock()
+    mock_plugin.get_routes.return_value = [
+        QulfRoute(
+            path="/secure-plugin",
+            methods=[HttpMethod.GET],
+            handler=dummy_handler,
+            require_roles=["admin"],
+            require_permissions=["read_post"],
+        )
+    ]
+    mock_auth.plugins = {"dummy": mock_plugin}
+    urlpatterns = serve_qulf(mock_auth)
+    secure_view = urlpatterns[-1].callback
+
+    req = rf.get("/secure-plugin")
+
+    # 1. Unauthenticated
+    mock_auth.get_session_from_cookies.return_value = None
+    res1 = await secure_view(req)
+    assert res1.status_code == 401
+
+    # 2. Missing Role
+    req.COOKIES["qulf_session"] = "token"
+    mock_user = MagicMock()
+    mock_auth.get_session_from_cookies.return_value = (MagicMock(), mock_user)
+    mock_auth.has_role.return_value = False
+    res2 = await secure_view(req)
+    assert res2.status_code == 403
+    assert "role" in json.loads(res2.content)["detail"]
+
+    # 3. Missing Permission
+    mock_auth.has_role.return_value = True
+    mock_auth.has_permission.return_value = False
+    res3 = await secure_view(req)
+    assert res3.status_code == 403
+    assert "permission" in json.loads(res3.content)["detail"]
+
+    # 4. Success
+    mock_auth.has_permission.return_value = True
+    res4 = await secure_view(req)
+    assert res4.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_django_requires_role_decorator(rf: RequestFactory, mock_auth: MagicMock):
+    @requires_role(mock_auth, "admin")
+    async def admin_view(request):
+        return JsonResponse({"msg": "ok"})
+
+    @requires_role(mock_auth, ["admin", "editor"], mode="any")
+    async def any_role_view(request):
+        return JsonResponse({"msg": "ok"})
+
+    req = rf.get("/test")
+
+    # 1. Unauthenticated
+    mock_auth.get_session_from_cookies.return_value = None
+    assert (await admin_view(req)).status_code == 401
+
+    # 2. Mode ALL - Missing Role
+    req.COOKIES["qulf_session"] = "token"
+    mock_auth.get_session_from_cookies.return_value = (MagicMock(), MagicMock())
+    mock_auth.has_role.return_value = False
+    assert (await admin_view(req)).status_code == 403
+
+    # 3. Mode ALL - Success
+    mock_auth.has_role.return_value = True
+    assert (await admin_view(req)).status_code == 200
+
+    # 4. Mode ANY - Missing Role
+    mock_auth.has_role.side_effect = lambda user, role: False
+    assert (await any_role_view(req)).status_code == 403
+
+    # 5. Mode ANY - Success
+    mock_auth.has_role.side_effect = lambda user, role: role == "editor"
+    assert (await any_role_view(req)).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_django_requires_permission_decorator(
+    rf: RequestFactory, mock_auth: MagicMock
+):
+    @requires_permission(mock_auth, "delete_post")
+    async def delete_view(request):
+        return JsonResponse({"msg": "ok"})
+
+    @requires_permission(mock_auth, ["write_post", "edit_post"], mode="any")
+    async def any_perm_view(request):
+        return JsonResponse({"msg": "ok"})
+
+    req = rf.get("/test")
+
+    # Unauthenticated
+    mock_auth.get_session_from_cookies.return_value = None
+    assert (await delete_view(req)).status_code == 401
+
+    # Mode = ALL - Missing Perm
+    req.COOKIES["qulf_session"] = "token"
+    mock_auth.get_session_from_cookies.return_value = (MagicMock(), MagicMock())
+    mock_auth.has_permission.return_value = False
+    assert (await delete_view(req)).status_code == 403
+
+    # Mode = ALL - Success
+    mock_auth.has_permission.return_value = True
+    assert (await delete_view(req)).status_code == 200
+
+    # Mode = ANY - Missing Perm
+    mock_auth.has_permission.side_effect = lambda user, perm: False
+    assert (await any_perm_view(req)).status_code == 403
+
+    # Mode = ANY - Success
+    mock_auth.has_permission.side_effect = lambda user, perm: perm == "edit_post"
+    assert (await any_perm_view(req)).status_code == 200

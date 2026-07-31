@@ -139,17 +139,17 @@ async def test_totp_enable_edge_cases(totp_app):
     client.cookies.set("qulf_session", session.token)
     client.post("/2fa/setup")  # Generates the secret so we can reach the next lines
 
-    # Line 72: Call enable without "code" in the payload
+    # Call enable without "code" in the payload
     res = client.post("/2fa/enable", json={})
     assert res.status_code == 400
     assert "2FA code missing" in res.json()["detail"]
 
-    # Line 91: Call enable with invalid code
+    # Call enable with invalid code
     res = client.post("/2fa/enable", json={"code": "000000"})
     assert res.status_code == 401
     assert "Invalid 2FA code" in res.json()["detail"]
 
-    # Line 77: Session is None but user exists.
+    # Session is None but user exists.
     # This happens in edge cases where the
     # adapter returns (None, user). We patch to simulate it.
     with patch.object(auth, "get_session_from_cookies", return_value=(None, user)):
@@ -172,12 +172,12 @@ async def test_totp_verify_login_edge_cases(totp_app):
         )
     )
 
-    # Line 106: Missing code
+    # Missing code
     res = client.post("/2fa/verify_login", json={"temp_token": "token"})
     assert res.status_code == 400
     assert "2FA code missing" in res.json()["detail"]
 
-    # Line 111: Missing temp_token
+    # Missing temp_token
     res = client.post("/2fa/verify_login", json={"code": "123456"})
     assert res.status_code == 400
     assert "Temporary Auth token missing" in res.json()["detail"]
@@ -190,7 +190,7 @@ async def test_totp_verify_login_edge_cases(totp_app):
     }
     valid_temp_token = jwt.encode(valid_payload, auth.config.secret_key)
 
-    # Line 131: User not found in DB (Simulate by using a fake sub in the token)
+    # User not found in DB (Simulate by using a fake sub in the token)
     bad_payload = {**valid_payload, "sub": "fake-id"}
     bad_token = jwt.encode(bad_payload, auth.config.secret_key)
     res = client.post(
@@ -203,7 +203,7 @@ async def test_totp_verify_login_edge_cases(totp_app):
     # We do this by setting a known extra column, but leaving the secret empty.
     await auth.db.update_user(user.id, {"two_factor_enabled": False})
 
-    # Line 141: User found, model_extra exists, but secret not setup yet
+    # User found, model_extra exists, but secret not setup yet
     res = client.post(
         "/2fa/verify_login", json={"temp_token": valid_temp_token, "code": "123456"}
     )
@@ -214,14 +214,14 @@ async def test_totp_verify_login_edge_cases(totp_app):
     secret = pyotp.random_base32()
     await auth.db.update_user(user.id, {"two_factor_secret": secret})
 
-    # Line 147: Invalid TOTP code
+    # Invalid TOTP code
     res = client.post(
         "/2fa/verify_login", json={"temp_token": valid_temp_token, "code": "000000"}
     )
     assert res.status_code == 401
     assert "Invalid 2FA code" in res.json()["detail"]
 
-    # Lines 155-156: valid token, valid code, but create_session fails
+    # valid token, valid code, but create_session fails
     valid_code = pyotp.TOTP(secret).now()
     with patch.object(
         auth, "create_session", side_effect=QulfException("Rate limited")

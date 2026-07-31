@@ -1,20 +1,27 @@
 layout {
-    cwd "/home/caleb/projects/OpenSource/qulf"
-    tab name="Tab #1" focus=true hide_floating_panes=true {
+    tab name="core" focus=true hide_floating_panes=true {
         pane size=1 borderless=true {
             plugin location="zellij:tab-bar"
         }
-        pane size="50%" split_direction="vertical" {
+        pane split_direction="vertical" {
             pane command="zellij" focus=true size="50%" {
                 args "action" "dump-layout"
                 start_suspended true
             }
-            pane cwd="docs" size="50%"
+            pane size="50%" {
+                pane cwd="web" size="50%"
+                pane cwd="demo" size="50%"
+            }
         }
-        pane size="50%" split_direction="vertical" {
-            pane cwd="tests" size="50%"
-            pane cwd="demo" size="50%"
+        pane size=1 borderless=true {
+            plugin location="zellij:status-bar"
         }
+    }
+    tab name="tests" hide_floating_panes=true {
+        pane size=1 borderless=true {
+            plugin location="zellij:tab-bar"
+        }
+        pane
         pane size=1 borderless=true {
             plugin location="zellij:status-bar"
         }

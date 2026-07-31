@@ -232,3 +232,113 @@ async def test_motor_soft_deletes_and_gets(motor_adapter: MotorAdapter):
     deleted_user = await motor_adapter.get_user_by_id(str(user.id))
     assert deleted_user is not None
     assert deleted_user.deleted_at is not None
+
+
+@pytest.mark.asyncio
+async def test_motor_rbac_management(motor_adapter: MotorAdapter):
+    adapter = motor_adapter
+
+    # 1. PERMISSIONS
+    perm_read = await adapter.create_permission("read:users", "Read users")
+    _ = await adapter.create_permission("write:users", "Write users")
+
+    assert perm_read.name == "read:users"
+
+    fetched_perm = await adapter.get_permission_by_name("read:users")
+    assert fetched_perm is not None
+    assert fetched_perm.name == "read:users"
+
+    missing_perm = await adapter.get_permission_by_name("non_existent")
+    assert missing_perm is None
+
+    # 2. ROLES
+    role_admin = await adapter.create_role("admin", "Admin role")
+    _ = await adapter.create_role("user", "User role")
+
+    assert role_admin.name == "admin"
+
+    fetched_role = await adapter.get_role_by_name("admin")
+    assert fetched_role is not None
+    assert fetched_role.name == "admin"
+
+    missing_role = await adapter.get_role_by_name("non_existent")
+    assert missing_role is None
+
+    # 3. GRANT PERMISSIONS TO ROLES
+    await adapter.grant_permission_to_role("admin", "read:users")
+    await adapter.grant_permission_to_role("admin", "write:users")
+    await adapter.grant_permission_to_role("user", "read:users")
+
+    with pytest.raises(ValueError, match="Role 'fake_role' does not exist."):
+        await adapter.grant_permission_to_role("fake_role", "read:users")
+
+    with pytest.raises(ValueError, match="Permission 'fake_perm' does not exist."):
+        await adapter.grant_permission_to_role("admin", "fake_perm")
+
+    # 4. USER CREATION
+    user = await adapter.create_user(
+        UserCreate(
+            name="RBAC User",
+            email="rbac@test.com",
+            username="rbacuser",
+            password="p",
+            password_confirmation="p",
+        ),
+        "hash",
+    )
+
+    # Check edge cases (new user has no roles/permissions yet)
+    assert await adapter.get_user_roles(user.id) == []
+    assert await adapter.get_user_permissions(user.id) == []
+
+    # 5. ASSIGN ROLES TO USER
+    await adapter.assign_role_to_user(user.id, "admin")
+    await adapter.assign_role_to_user(user.id, "user")
+
+    with pytest.raises(ValueError, match="Role 'fake_role' does not exist."):
+        await adapter.assign_role_to_user(user.id, "fake_role")
+
+    # 6. FETCH USER ROLES & PERMISSIONS
+    roles = await adapter.get_user_roles(user.id)
+    role_names = [r.name for r in roles]
+    assert "admin" in role_names
+    assert "user" in role_names
+    assert len(roles) == 2
+
+    permissions = await adapter.get_user_permissions(user.id)
+    perm_names = [p.name for p in permissions]
+    assert "read:users" in perm_names
+    assert "write:users" in perm_names
+    assert len(permissions) == 2
+
+    # 7. REMOVE ROLE FROM USER
+    await adapter.remove_role_from_user(user.id, "admin")
+
+    updated_roles = await adapter.get_user_roles(user.id)
+    updated_role_names = [r.name for r in updated_roles]
+    assert "admin" not in updated_role_names
+    assert "user" in updated_role_names
+
+    updated_permissions = await adapter.get_user_permissions(user.id)
+    updated_perm_names = [p.name for p in updated_permissions]
+    assert "write:users" not in updated_perm_names
+    assert "read:users" in updated_perm_names
+
+    await adapter.create_role("empty_role", "A role with no permissions")
+
+    empty_user = await adapter.create_user(
+        UserCreate(
+            name="Empty User",
+            email="empty@test.com",
+            username="emptyuser",
+            password="p",
+            password_confirmation="p",
+        ),
+        "hash",
+    )
+
+    await adapter.assign_role_to_user(empty_user.id, "empty_role")
+
+    # This will hit the `if not perm_names: return []` branch
+    empty_permissions = await adapter.get_user_permissions(empty_user.id)
+    assert empty_permissions == []

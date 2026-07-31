@@ -279,3 +279,59 @@ def test_get_plugin_registry(memory_db):
     # Name not found
     res5 = auth.get_plugin(DummyPluginA, name="does_not_exist")
     assert res5 is None
+
+
+@pytest.mark.asyncio
+async def test_core_require_rbac():
+    from datetime import datetime, timezone
+    from unittest.mock import AsyncMock
+
+    from qulf.config import QulfConfig
+    from qulf.core import Qulf
+    from qulf.exceptions import AuthorizationError
+    from qulf.types import Permission, Role, User
+
+    # 1. Setup Mock DB and Core Engine
+    mock_db = AsyncMock()
+    config = QulfConfig(secret_key="long_secret_key_for_testing_purposes")
+    auth = Qulf(db=mock_db, config=config)
+
+    dummy_user = User(
+        id="123",
+        email="test@example.com",
+        name="Test",
+        username="test",
+        created_at=datetime.now(timezone.utc),
+    )
+
+    # require_role
+    mock_role = Role(id="123", name="admin", created_at=datetime.now(timezone.utc))
+
+    # 1. Success Path
+    mock_db.get_user_roles.return_value = [mock_role]
+    dummy_user.roles = None  # Reset internal cache
+    await auth.require_role(dummy_user, "admin")  # Should not raise
+
+    # 2. Failure Path (Raises AuthorizationError)
+    mock_db.get_user_roles.return_value = []
+    dummy_user.roles = None
+    with pytest.raises(AuthorizationError, match="User lacks required role: 'admin'"):
+        await auth.require_role(dummy_user, "admin")
+
+    # require_permission
+    mock_perm = Permission(
+        id="123", name="write:docs", created_at=datetime.now(timezone.utc)
+    )
+
+    # Success Path
+    mock_db.get_user_permissions.return_value = [mock_perm]
+    dummy_user.permissions = None  # Reset internal cache
+    await auth.require_permission(dummy_user, "write:docs")  # Should not raise
+
+    # Failure Path (Raises AuthorizationError)
+    mock_db.get_user_permissions.return_value = []
+    dummy_user.permissions = None
+    with pytest.raises(
+        AuthorizationError, match="User lacks required permission: 'write:docs'"
+    ):
+        await auth.require_permission(dummy_user, "write:docs")

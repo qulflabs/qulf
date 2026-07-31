@@ -179,11 +179,11 @@ async def test_django_coverage_gaps(memory_db):
 # SQLMODEL ARTIFACT GAPS
 # We repeat the DB creation to force coverage to trace it
 @pytest.mark.asyncio
-async def test_sqlmodel_artifact_gaps(sqlite_adapter):
+async def test_sqlmodel_artifact_gaps(sqlalchemy_adapter):
     from qulf.adapters.sqlmodel import SQLModelAdapter
 
-    if isinstance(sqlite_adapter, SQLModelAdapter):
-        user = await sqlite_adapter.create_user(
+    if isinstance(sqlalchemy_adapter, SQLModelAdapter):
+        user = await sqlalchemy_adapter.create_user(
             UserCreate(
                 name="a",
                 email="test@test.com",
@@ -205,8 +205,8 @@ async def test_sqlmodel_artifact_gaps(sqlite_adapter):
             id_token="id",
         )
 
-        await sqlite_adapter.create_account(acc_data)
-        await sqlite_adapter.get_account_by_provider("gh", "123")
+        await sqlalchemy_adapter.create_account(acc_data)
+        await sqlalchemy_adapter.get_account_by_provider("gh", "123")
 
 
 @pytest.mark.asyncio

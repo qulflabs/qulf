@@ -77,7 +77,7 @@ def test_oauth_routing_edge_cases():
 
 
 @pytest.mark.asyncio
-async def test_oauth_db_integrity_error(sqlite_adapter):
+async def test_oauth_db_integrity_error(sqlalchemy_adapter):
     """Test the 500 error when an Account exists but the User was deleted."""
     provider = ErrorProneProvider(
         client_id="id", client_secret="secret", redirect_uri="http://localhost"
@@ -87,10 +87,10 @@ async def test_oauth_db_integrity_error(sqlite_adapter):
         oauth_providers=[provider],
     )
 
-    auth = Qulf(db=sqlite_adapter, config=config, plugins=[OAuthPlugin()])
+    auth = Qulf(db=sqlalchemy_adapter, config=config, plugins=[OAuthPlugin()])
 
     # Manually inject an orphaned account into the database
-    await sqlite_adapter.create_account(
+    await sqlalchemy_adapter.create_account(
         AccountCreate(user_id=99999, account_id="999", provider_id="error_provider")
     )
 

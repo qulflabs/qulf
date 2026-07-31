@@ -78,7 +78,7 @@ jobs:
         run: |
           uv run pytest tests/ \
             -v \
-            --cov=./ \
+            --cov=./src \
             --cov-report=xml \
             --junitxml=junit.xml \
             -o junit_family=legacy

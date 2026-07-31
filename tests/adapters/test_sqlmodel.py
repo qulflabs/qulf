@@ -285,3 +285,98 @@ async def test_sqlmodel_get_and_delete_user(sqlmodel_adapter: SQLModelAdapter):
     fetched = await sqlmodel_adapter.get_user_by_id_with_password(str(user.id))
     assert fetched is not None
     assert fetched.hashed_password == "hash"
+
+
+@pytest.mark.asyncio
+async def test_sqlmodel_rbac_management(sqlmodel_adapter):
+    adapter = sqlmodel_adapter
+
+    # 1. PERMISSIONS
+    await adapter.create_permission("read:users", "Read users")
+    await adapter.create_permission("write:users", "Write users")
+
+    fetched_perm = await adapter.get_permission_by_name("read:users")
+    assert fetched_perm is not None
+    assert fetched_perm.name == "read:users"
+
+    assert await adapter.get_permission_by_name("non_existent") is None
+
+    # 2. ROLES
+    await adapter.create_role("admin", "Admin role")
+    await adapter.create_role("user", "User role")
+
+    fetched_role = await adapter.get_role_by_name("admin")
+    assert fetched_role is not None
+    assert fetched_role.name == "admin"
+
+    assert await adapter.get_role_by_name("non_existent") is None
+
+    # 3. GRANT PERMISSIONS TO ROLES
+    await adapter.grant_permission_to_role("admin", "read:users")
+    await adapter.grant_permission_to_role("admin", "write:users")
+    await adapter.grant_permission_to_role("user", "read:users")
+
+    # Coverage: Trigger the `IntegrityError` rollback block by assigning again
+    await adapter.grant_permission_to_role("admin", "read:users")
+
+    with pytest.raises(ValueError, match="Role 'fake_role' does not exist."):
+        await adapter.grant_permission_to_role("fake_role", "read:users")
+
+    with pytest.raises(ValueError, match="Permission 'fake_perm' does not exist."):
+        await adapter.grant_permission_to_role("admin", "fake_perm")
+
+    # 4. USER CREATION
+    from qulf.types import UserCreate
+
+    user = await adapter.create_user(
+        UserCreate(
+            name="SQLModel RBAC",
+            email="sqlmodel_rbac@test.com",
+            username="sqlmodelrbac",
+            password="p",
+            password_confirmation="p",
+        ),
+        "hash",
+    )
+
+    # New user has no roles/permissions
+    assert await adapter.get_user_roles(user.id) == []
+    assert await adapter.get_user_permissions(user.id) == []
+
+    # 5. ASSIGN ROLES TO USER
+    await adapter.assign_role_to_user(user.id, "admin")
+    await adapter.assign_role_to_user(user.id, "user")
+
+    # Coverage: Trigger the `IntegrityError` rollback block by assigning again
+    await adapter.assign_role_to_user(user.id, "admin")
+
+    with pytest.raises(ValueError, match="Role 'fake_role' does not exist."):
+        await adapter.assign_role_to_user(user.id, "fake_role")
+
+    # 6. FETCH USER ROLES & PERMISSIONS
+    roles = await adapter.get_user_roles(user.id)
+    role_names = [r.name for r in roles]
+    assert "admin" in role_names
+    assert "user" in role_names
+
+    permissions = await adapter.get_user_permissions(user.id)
+    perm_names = [p.name for p in permissions]
+    assert "read:users" in perm_names
+    assert "write:users" in perm_names
+
+    # 7. REMOVE ROLE FROM USER
+    await adapter.remove_role_from_user(user.id, "admin")
+
+    # Coverage: Trigger the `if role_id:`
+    # miss path by attempting to remove a non-existent role
+    await adapter.remove_role_from_user(user.id, "non_existent_role")
+
+    updated_roles = await adapter.get_user_roles(user.id)
+    updated_role_names = [r.name for r in updated_roles]
+    assert "admin" not in updated_role_names
+    assert "user" in updated_role_names
+
+    updated_permissions = await adapter.get_user_permissions(user.id)
+    updated_perm_names = [p.name for p in updated_permissions]
+    assert "write:users" not in updated_perm_names
+    assert "read:users" in updated_perm_names

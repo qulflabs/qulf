@@ -16,6 +16,9 @@ uv venv --allow-existing
 uv sync --all-extras
 """
 
+[tasks.zellij]
+run = "zellij --layout ./zLayout.kdl"
+
 [tasks.format]
 description = "Format code using Ruff"
 run = """
@@ -195,3 +198,4 @@ python.uv_venv_auto = "create|source"
 
 [settings.npm]
 package_manager = "pnpm"
+

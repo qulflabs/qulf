@@ -18,9 +18,6 @@ class CoreModel(BaseModel):
 class User(CoreModel):
     """
     Standard, safe public representation of a user account.
-
-    Contains user descriptors and profile tracking parameters, but strictly
-    excludes the password hash to protect credentials from exposure.
     """
 
     name: str
@@ -29,13 +26,13 @@ class User(CoreModel):
     email_verified_at: datetime | None = None
     last_login: datetime | None = None
     deleted_at: datetime | None = None
+    roles: list["Role"] | None = None
+    permissions: list["Permission"] | None = None
 
 
 class UserCreate(BaseModel):
     """
     Validation schema for creating a user account.
-
-    Enforces password matching and standard syntax before creation proceeds.
     """
 
     name: str
@@ -109,3 +106,21 @@ class Account(CoreModel, AccountCreate):
     """
 
     deleted_at: datetime | None = None
+
+
+class PermissionBase(BaseModel):
+    name: str
+    description: str | None = None
+
+
+class Permission(CoreModel, PermissionBase):
+    pass
+
+
+class RoleBase(BaseModel):
+    name: str
+    description: str | None = None
+
+
+class Role(CoreModel, RoleBase):
+    pass

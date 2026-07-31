@@ -326,7 +326,7 @@ class Qulf:
             )
         return email_verification_token
 
-    async def verify_email(self, token: str) -> User | None:
+    async def verify_email(self, token: str) -> User:
         """Verifies the token and marks the user's email as verified."""
         try:
             payload = jwt.decode(token, self.config.secret_key, algorithms=["HS256"])

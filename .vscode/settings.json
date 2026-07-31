@@ -1,8 +1,10 @@
 {
     "cSpell.words": [
         "bento",
+        "ondelete",
         "passwordless",
         "Qulf",
+        "sessionmaker",
         "statelessly",
         "totp"
     ],

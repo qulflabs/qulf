@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from pydantic import ValidationError
 
+from qulf.adapters.base import DatabaseAdapter
 from qulf.core import Qulf
 from qulf.crypto import verify_password
 from qulf.exceptions import (
@@ -284,7 +285,7 @@ def test_get_plugin_registry(memory_db):
 @pytest.mark.asyncio
 async def test_core_require_rbac():
     from datetime import datetime, timezone
-    from unittest.mock import AsyncMock
+    from unittest.mock import AsyncMock, MagicMock
 
     from qulf.config import QulfConfig
     from qulf.core import Qulf
@@ -292,7 +293,11 @@ async def test_core_require_rbac():
     from qulf.types import Permission, Role, User
 
     # 1. Setup Mock DB and Core Engine
-    mock_db = AsyncMock()
+    mock_db = MagicMock(spec=DatabaseAdapter)
+
+    mock_db.get_user_roles = AsyncMock()
+    mock_db.get_user_permissions = AsyncMock()
+
     config = QulfConfig(secret_key="long_secret_key_for_testing_purposes")
     auth = Qulf(db=mock_db, config=config)
 
@@ -307,12 +312,12 @@ async def test_core_require_rbac():
     # require_role
     mock_role = Role(id="123", name="admin", created_at=datetime.now(timezone.utc))
 
-    # 1. Success Path
+    # Success Path
     mock_db.get_user_roles.return_value = [mock_role]
     dummy_user.roles = None  # Reset internal cache
     await auth.require_role(dummy_user, "admin")  # Should not raise
 
-    # 2. Failure Path (Raises AuthorizationError)
+    # Failure Path (Raises AuthorizationError)
     mock_db.get_user_roles.return_value = []
     dummy_user.roles = None
     with pytest.raises(AuthorizationError, match="User lacks required role: 'admin'"):

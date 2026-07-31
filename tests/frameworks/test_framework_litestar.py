@@ -263,7 +263,7 @@ async def test_litestar_rbac_enforcement():
     from qulf.core import Qulf
     from qulf.frameworks.litestar import RequiresPermission, RequiresRole, serve_qulf
     from qulf.plugins.base import QulfPlugin
-    from qulf.routing import HttpMethod, QulfRequest, QulfResponse, QulfRoute
+    from qulf.routing import HttpMethod, QulfResponse, QulfRoute
     from qulf.types import User
 
     # 1. Mock the Core Qulf Engine
@@ -306,7 +306,6 @@ async def test_litestar_rbac_enforcement():
 
     auth_mock.plugins = {"mock": MockRBACPlugin()}
 
-    # 3. Create Litestar routes to test native Dependencies (`Provide`)
     @get(
         "/dep-roles-all",
         dependencies={
@@ -359,9 +358,7 @@ async def test_litestar_rbac_enforcement():
     )
 
     with TestClient(app=app) as client:
-        # ---------------------------------------------------------
-        # PART A: Test Plugin Route Protection
-        # ---------------------------------------------------------
+        # Test Plugin Route Protection
         auth_mock.get_session_from_cookies.return_value = None
         assert client.get("/plugin-role").status_code == 401
         assert client.get("/plugin-perm").status_code == 401
@@ -379,38 +376,36 @@ async def test_litestar_rbac_enforcement():
         assert client.get("/plugin-role").status_code == 200
         assert client.get("/plugin-perm").status_code == 200
 
-        # ---------------------------------------------------------
-        # PART B: Test Dependency Protection
-        # ---------------------------------------------------------
-        # 1. ROLES (mode="all")
+        # Test Dependency Protection
+        # ROLES (mode="all")
         auth_mock.has_role.side_effect = lambda user, role: role == "admin"
         assert client.get("/dep-roles-all").status_code == 403
 
         auth_mock.has_role.side_effect = lambda user, role: True
         assert client.get("/dep-roles-all").status_code == 200
 
-        # 2. ROLES (mode="any")
+        # ROLES (mode="any")
         auth_mock.has_role.side_effect = lambda user, role: False
         assert client.get("/dep-roles-any").status_code == 403
 
         auth_mock.has_role.side_effect = lambda user, role: role == "editor"
         assert client.get("/dep-roles-any").status_code == 200
 
-        # 3. PERMISSIONS (mode="all")
+        # PERMISSIONS (mode="all")
         auth_mock.has_permission.side_effect = lambda user, perm: perm == "read"
         assert client.get("/dep-perms-all").status_code == 403
 
         auth_mock.has_permission.side_effect = lambda user, perm: True
         assert client.get("/dep-perms-all").status_code == 200
 
-        # 4. PERMISSIONS (mode="any")
+        # PERMISSIONS (mode="any")
         auth_mock.has_permission.side_effect = lambda user, perm: False
         assert client.get("/dep-perms-any").status_code == 403
 
         auth_mock.has_permission.side_effect = lambda user, perm: perm == "write"
         assert client.get("/dep-perms-any").status_code == 200
 
-        # 5. Dependency Unauthenticated Fallback -> 401
+        # Dependency Unauthenticated Fallback -> 401
         auth_mock.get_session_from_cookies.return_value = None
         assert client.get("/dep-roles-all").status_code == 401
         assert client.get("/dep-perms-all").status_code == 401

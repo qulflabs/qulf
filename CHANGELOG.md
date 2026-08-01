@@ -1,3 +1,24 @@
+## v0.1.0b4 (2026-08-01)
+
+### Feat
+
+- add Flask framework support and update project roadmap in README
+- **frameworks**: add flask support and tests
+- **frameworks**: add flask integration
+- **litestar**: add role and permission authorization guards and dependencies
+- **django**: add role and permission decorators and route protection
+- **fastapi**: add rbac enforcement and route protection dependencies
+- **motor**: add rbac support for motor adapter
+- **adapter**: add rbac support to sqlmodel adapter
+- **adapter**: add role and permission support to sqlalchemy adapter
+- **core**: add role-based access control and permission checks
+- **adapter**: add role and permission methods to database adapter
+
+### Refactor
+
+- **test**: reorganize plugin test files and update adapter fixture
+- **adapters**: remove adapter exports from init module
+
 ## v0.1.0b3 (2026-07-29)
 
 ### Feat

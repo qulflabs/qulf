@@ -78,10 +78,10 @@ Qulf ships with batteries included. Mix and match to fit your stack:
 Now that the core ecosystem is stable, we are focusing on Developer Experience
 (DX) and frontend integrations:
 
-* [-] Role-Based Access Control (RBAC) and Permissions Layer
-* [ ] Flask Framework Adapter.
-* [ ] Implement WebAuthn / Passkeys Support
-* [ ] React / Next.js SDK (Hooks and server-side utilities).
+* [✅] Role-Based Access Control (RBAC) and Permissions Layer
+* [✅] Flask Framework Adapter.
+* [-] Implement WebAuthn / Passkeys Support
+* [] React / Next.js SDK (Hooks and server-side utilities).
 * [ ] Admin Dashboard Plugin (A UI to manage users, sessions, and anything related to authentication and authorization).
 * [ ] More OAuth Providers (Apple, Microsoft, Discord).
 

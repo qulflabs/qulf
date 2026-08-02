@@ -54,7 +54,7 @@ adapter = SQLModelAdapter(engine=my_db_engine)
 # 2. Configure Qulf
 auth = Qulf(
     db=adapter,
-    config=QulfConfig(secret_key="<SECRET_KEY>") # 32 chars or more
+    config=QulfConfig(secret_key="<SECRET_KEY>"),  # 32 chars or more
 )
 
 # 3. Mount it to your Framework of choice!
@@ -62,7 +62,7 @@ app = FastAPI()
 app.include_router(serve_qulf(auth), prefix="/auth")
 ```
 
-### Ecosystem (v1.0.0)
+### Ecosystem (Before v1.0.0)
 
 Qulf ships with batteries included. Mix and match to fit your stack:
 
@@ -71,19 +71,21 @@ Qulf ships with batteries included. Mix and match to fit your stack:
 | ✅ **FastAPI**    | ✅ **SQLAlchemy**      | ✅ **OAuth2** (GitHub, Google)    |
 | ✅ **Litestar**   | ✅ **SQLModel**        | ✅ **TOTP 2FA** |
 | ✅ **Django**     | ✅ **MongoDB (Motor)** | ✅ **Magic Links** (Passwordless) |
-| 🚧 Flask*(Soon)* | 🚧 Prisma *(Soon)*| ✅ **Rate Limiting** |
+| ✅ **Flask*(Soon)** | 🚧 Prisma *(Soon)*| ✅ **Rate Limiting** |
 
 ### Roadmap (Beyond v1.0.0)
 
 Now that the core ecosystem is stable, we are focusing on Developer Experience
 (DX) and frontend integrations:
 
-* [✅] Role-Based Access Control (RBAC) and Permissions Layer
-* [✅] Flask Framework Adapter.
-* [-] Implement WebAuthn / Passkeys Support
-* [] React / Next.js SDK (Hooks and server-side utilities).
-* [ ] Admin Dashboard Plugin (A UI to manage users, sessions, and anything related to authentication and authorization).
-* [ ] More OAuth Providers (Apple, Microsoft, Discord).
+- [✅] Role-Based Access Control (RBAC) and Permissions Layer
+- [✅] Flask Framework Adapter. 
+- [-] Implement WebAuthn / Passkeys Support
+- [ ] Documentation and Examples
+- [ ] Vanilla JS, React / Next.js SDK (Hooks and server-side utilities).
+- [ ] A CLI tool to help with bootstrapping projects among other things
+- [ ] Admin Dashboard Plugin (A UI to manage users, sessions, and anything related to authentication and authorization).
+- [ ] More OAuth Providers (Apple, Microsoft, Discord).
 
 ### Contributing
 

@@ -103,6 +103,7 @@ def test_encode_decode_challenge_roundtrip(passkey_app):
     assert challenge_bytes == FAKE_CHALLENGE
     assert user_id == "42"
 
+
 def test_decode_challenge_expired(passkey_app):
     _, auth, _, plugin = passkey_app
     expired_payload = {
@@ -149,6 +150,7 @@ def test_get_custom_columns(passkey_app):
     assert "passkey_credential_id" in cols["user"]
     assert "passkey_public_key" in cols["user"]
     assert "passkey_sign_count" in cols["user"]
+
 
 # POST /passkey/register/begin
 @pytest.mark.asyncio
@@ -383,9 +385,7 @@ async def test_login_begin_success(registered_user):
             return_value=_options_json(FAKE_CHALLENGE),
         ),
     ):
-        res = client.post(
-            "/passkey/login/begin", json={"email": "alice@example.com"}
-        )
+        res = client.post("/passkey/login/begin", json={"email": "alice@example.com"})
 
     assert res.status_code == 200
     body = res.json()

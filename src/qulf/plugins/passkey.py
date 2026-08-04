@@ -160,7 +160,6 @@ class PasskeyPlugin(QulfPlugin):
         async def register_begin(request: QulfRequest) -> QulfResponse:
             """
             **POST /passkey/register/begin**
-
             Requires an active session. Returns WebAuthn
             ``PublicKeyCredentialCreationOptions`` as JSON, plus a short-lived
             challenge token the client must echo back in

@@ -103,6 +103,15 @@ class Requires2FAError(QulfException):
     pass
 
 
+class PasskeyVerificationError(AuthenticationError):
+    """
+    Raised when a WebAuthn signature or challenge verification fails
+    during passkey registration or authentication.
+    """
+
+    pass
+
+
 class RateLimitExceededError(QulfException):
     def __init__(self, message: str, retry_after: int):
         super().__init__(message)

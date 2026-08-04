@@ -28,6 +28,7 @@ motor = ["motor>=3.0"]
 redis = ["redis>=5.0.0"]
 sqlmodel = ["sqlmodel>=0.0.21"]
 flask = ["flask >= 3.0, < 4.0"]
+passkey = ["webauthn>=2.0.0"]
 
 [tool.ruff]
 line-length = 88
@@ -70,6 +71,7 @@ dev = [
   "respx>=0.23.1",
   "faker>=40.31.0",
   "aiosqlite>=0.22.1",
+  "webauthn>=2.0.0",
 ]
 
 [build-system]

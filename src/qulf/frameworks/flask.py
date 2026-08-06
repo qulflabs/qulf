@@ -92,12 +92,9 @@ def serve_qulf(auth: Qulf) -> Blueprint:
             session_data = await auth.get_session_from_cookies(request.cookies)
             if not session_data:
                 return jsonify({"detail": "Unauthorized"}), 401
-            
+
             session, user = session_data
-            return jsonify({
-                "session": session.model_dump(),
-                "user": user.model_dump()
-            })
+            return jsonify({"session": session.model_dump(), "user": user.model_dump()})
         except QulfException as e:
             return jsonify({"detail": str(e)}), 401
 

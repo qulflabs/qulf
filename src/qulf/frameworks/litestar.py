@@ -96,12 +96,9 @@ def serve_qulf(auth: Qulf) -> Router:
         session_data = await auth.get_session_from_cookies(request.cookies)
         if not session_data:
             raise NotAuthorizedException("Unauthorized")
-        
+
         session, user = session_data
-        return {
-            "session": session.model_dump(),
-            "user": user.model_dump()
-        }
+        return {"session": session.model_dump(), "user": user.model_dump()}
 
     @post("/sign-out")
     async def sign_out(request: Request[Any, Any, Any]) -> Response[dict[str, str]]:

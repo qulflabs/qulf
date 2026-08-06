@@ -1,4 +1,3 @@
-from qulf.plugins import QulfPlugin
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -10,6 +9,7 @@ from litestar.testing import TestClient
 from qulf.core import Qulf
 from qulf.exceptions import QulfException
 from qulf.frameworks.litestar import serve_qulf
+from qulf.plugins import QulfPlugin
 from qulf.routing import (
     CookieOptions,
     HttpMethod,

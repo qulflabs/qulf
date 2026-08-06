@@ -345,3 +345,59 @@ class TestFlaskDecorators:
         assert client.get("/dep-perms-any").status_code == 200
         auth_mock.has_permission.side_effect = lambda user, perm: False
         assert client.get("/dep-perms-any").status_code == 403
+
+
+class TestFlaskSessionRoute:
+    def test_get_session(self, client, auth_mock, dummy_user, dummy_session):
+        # 1. Valid Session
+        auth_mock.get_session_from_cookies.return_value = (dummy_session, dummy_user)
+        res = client.get("/session")
+        assert res.status_code == 200
+        assert res.json["user"]["id"] == dummy_user.id
+
+        # 2. Invalid Session
+        auth_mock.get_session_from_cookies.return_value = None
+        res = client.get("/session")
+        assert res.status_code == 401
+
+        # 3. Exception thrown during lookup
+        from qulf.exceptions import QulfException
+
+        auth_mock.get_session_from_cookies.side_effect = QulfException("Database Error")
+        res = client.get("/session")
+        assert res.status_code == 401
+
+
+class TestFlaskDependencies:
+    @pytest.mark.asyncio
+    async def test_get_current_user_and_session(
+        self, app, auth_mock, dummy_user, dummy_session
+    ):
+        from qulf.exceptions import QulfException
+        from qulf.frameworks.flask import get_current_session, get_current_user
+
+        # Ensure we don't carry over the side_effect from the previous test
+        auth_mock.get_session_from_cookies.side_effect = None
+
+        # Flask requires an active request context to access `request.cookies`
+        with app.test_request_context(headers={"Cookie": "qulf_token=valid"}):
+            # 1. Valid Session
+            auth_mock.get_session_from_cookies.return_value = (
+                dummy_session,
+                dummy_user,
+            )
+
+            user = await get_current_user(auth_mock)()
+            assert user.id == dummy_user.id
+
+            session = await get_current_session(auth_mock)()
+            assert session.token == dummy_session.token
+
+            # 2. Invalid Session -> Raises QulfException
+            auth_mock.get_session_from_cookies.return_value = None
+
+            with pytest.raises(QulfException, match="Unauthorized"):
+                await get_current_user(auth_mock)()
+
+            with pytest.raises(QulfException, match="Unauthorized"):
+                await get_current_session(auth_mock)()

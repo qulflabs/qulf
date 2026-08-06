@@ -227,16 +227,16 @@ async def test_framework_auth_helpers_and_forgot_pw(memory_db):
 
     # auth helper -> No Cookie
     client_fa.cookies.clear()
-    assert client_fa.delete("/account").status_code == 401
+    assert client_fa.delete("/delete-account").status_code == 401
 
     # auth helper -> Invalid Session
     auth.validate_session = AsyncMock(return_value=None)
     client_fa.cookies.set(auth.config.cookies.name, "bad")
-    assert client_fa.delete("/account").status_code == 401
+    assert client_fa.delete("/delete-account").status_code == 401
 
     # auth helper -> Exception FastAPI specific except block
     auth.validate_session = AsyncMock(side_effect=QulfException("Auth Error"))
-    assert client_fa.delete("/account").status_code == 401
+    assert client_fa.delete("/delete-account").status_code == 401
 
     # LITESTAR
     app_litestar = Litestar(route_handlers=[litestar_serve(auth)])
@@ -249,12 +249,12 @@ async def test_framework_auth_helpers_and_forgot_pw(memory_db):
 
     # Hit auth helper -> No Cookie
     client_ls.cookies.clear()
-    assert client_ls.delete("/account").status_code == 401
+    assert client_ls.delete("/delete-account").status_code == 401
 
     # auth helper -> Invalid Session
     auth.validate_session = AsyncMock(return_value=None)
     client_ls.cookies.set(auth.config.cookies.name, "bad")
-    assert client_ls.delete("/account").status_code == 401
+    assert client_ls.delete("/delete-account").status_code == 401
 
     # DJANGO
     rf = RequestFactory()

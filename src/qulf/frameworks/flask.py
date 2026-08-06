@@ -1,4 +1,5 @@
 import inspect
+from collections.abc import Callable, Coroutine
 from functools import wraps
 from typing import Any, Literal
 
@@ -15,7 +16,29 @@ from qulf.frameworks.base import (
     VerifyEmailRequest,
 )
 from qulf.routing import QulfRequest
-from qulf.types import UserCreate
+from qulf.types import Session, User, UserCreate
+
+
+def get_current_session(auth: Qulf) -> Callable[[], Coroutine[Any, Any, Session]]:
+    async def _get() -> Session:
+        session_data = await auth.get_session_from_cookies(request.cookies)
+        if not session_data:
+            raise QulfException("Unauthorized")
+        session, _ = session_data
+        return session
+
+    return _get
+
+
+def get_current_user(auth: Qulf) -> Callable[[], Coroutine[Any, Any, User]]:
+    async def _get() -> User:
+        session_data = await auth.get_session_from_cookies(request.cookies)
+        if not session_data:
+            raise QulfException("Unauthorized")
+        _, user = session_data
+        return user
+
+    return _get
 
 
 def serve_qulf(auth: Qulf) -> Blueprint:
@@ -62,6 +85,18 @@ def serve_qulf(auth: Qulf) -> Blueprint:
         except (ValueError, ValidationError, QulfException) as e:
             status_code = 401 if str(e) == "Unauthorized" else 400
             return jsonify({"detail": str(e)}), status_code
+
+    @bp.route("/session", methods=["GET"])
+    async def get_session() -> Any:
+        try:
+            session_data = await auth.get_session_from_cookies(request.cookies)
+            if not session_data:
+                return jsonify({"detail": "Unauthorized"}), 401
+
+            session, user = session_data
+            return jsonify({"session": session.model_dump(), "user": user.model_dump()})
+        except QulfException as e:
+            return jsonify({"detail": str(e)}), 401
 
     @bp.route("/sign-out", methods=["POST"])
     async def sign_out() -> Any:

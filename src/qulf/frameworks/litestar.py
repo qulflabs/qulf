@@ -1,6 +1,7 @@
+from collections.abc import Callable, Coroutine
 from typing import Any, Literal, cast
 
-from litestar import Request, Response, Router, delete, post, route
+from litestar import Request, Response, Router, delete, get, post, route
 from litestar.datastructures import Cookie
 from litestar.exceptions import NotAuthorizedException, PermissionDeniedException
 from litestar.types import Method
@@ -15,7 +16,33 @@ from qulf.frameworks import (
     VerifyEmailRequest,
 )
 from qulf.routing import QulfRequest
-from qulf.types import User, UserCreate
+from qulf.types import Session, User, UserCreate
+
+
+def get_current_session(
+    auth: Qulf,
+) -> Callable[[Request[Any, Any, Any]], Coroutine[Any, Any, Session]]:
+    async def _dependency(request: Request[Any, Any, Any]) -> Session:
+        session_data = await auth.get_session_from_cookies(request.cookies)
+        if not session_data:
+            raise NotAuthorizedException("Unauthorized")
+        session, _ = session_data
+        return session
+
+    return _dependency
+
+
+def get_current_user(
+    auth: Qulf,
+) -> Callable[[Request[Any, Any, Any]], Coroutine[Any, Any, User]]:
+    async def _dependency(request: Request[Any, Any, Any]) -> User:
+        session_data = await auth.get_session_from_cookies(request.cookies)
+        if not session_data:
+            raise NotAuthorizedException("Unauthorized")
+        _, user = session_data
+        return user
+
+    return _dependency
 
 
 def serve_qulf(auth: Qulf) -> Router:
@@ -63,6 +90,18 @@ def serve_qulf(auth: Qulf) -> Router:
         return Response(
             {"message": "Signed in successfully"}, cookies=[cookie], status_code=200
         )
+
+    @get("/session")
+    async def get_session(request: Request[Any, Any, Any]) -> dict[str, Any]:
+        session_data = await auth.get_session_from_cookies(request.cookies)
+        if not session_data:
+            raise NotAuthorizedException("Unauthorized")
+        
+        session, user = session_data
+        return {
+            "session": session.model_dump(),
+            "user": user.model_dump()
+        }
 
     @post("/sign-out")
     async def sign_out(request: Request[Any, Any, Any]) -> Response[dict[str, str]]:
@@ -119,7 +158,7 @@ def serve_qulf(auth: Qulf) -> Router:
             status_code = 401 if str(e) == "Unauthorized" else 400
             return Response({"detail": str(e)}, status_code=status_code)
 
-    @delete("/account", status_code=200)
+    @delete("/delete-account", status_code=200)
     async def delete_account(request: Request[Any, Any, Any]) -> Response[Any]:
         try:
             user_id = await _get_authenticated_user_id(request)
@@ -230,6 +269,7 @@ def serve_qulf(auth: Qulf) -> Router:
         route_handlers=[
             sign_up,
             sign_in,
+            get_session,
             sign_out,
             forgot_password,
             reset_password,

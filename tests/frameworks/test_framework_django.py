@@ -217,7 +217,7 @@ async def test_sign_in_sad_paths(rf: RequestFactory, mock_auth: MagicMock) -> No
 @pytest.mark.asyncio
 async def test_sign_out(rf: RequestFactory, mock_auth: MagicMock) -> None:
     urlpatterns = serve_qulf(mock_auth)
-    sign_out_view = urlpatterns[2].callback
+    sign_out_view = urlpatterns[3].callback
 
     assert (await sign_out_view(rf.get("/sign-out"))).status_code == 405
 
@@ -393,7 +393,7 @@ async def test_django_core_exceptions(rf: RequestFactory, mock_auth: MagicMock):
     req3.COOKIES["qulf_session"] = "valid-token"
     assert (await views["change-password"](req3)).status_code == 400
 
-    req4 = rf.delete("/account")
+    req4 = rf.delete("/delete-account")
     req4.COOKIES["qulf_session"] = "valid-token"
     assert (await delete_view(req4)).status_code == 400
 
@@ -555,3 +555,91 @@ async def test_django_requires_permission_decorator(
     # Mode = ANY - Success
     mock_auth.has_permission.side_effect = lambda user, perm: perm == "edit_post"
     assert (await any_perm_view(req)).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_django_current_user_and_session(mock_auth: MagicMock):
+    import json
+    from datetime import datetime, timezone
+    from unittest.mock import AsyncMock
+
+    import pytest
+    from django.http import HttpRequest
+
+    from qulf.config import QulfConfig
+    from qulf.exceptions import QulfException
+    from qulf.frameworks.django import (
+        get_current_session,
+        get_current_user,
+        serve_qulf,
+    )
+    from qulf.types import Session, User
+
+    mock_auth.config = QulfConfig(secret_key="test_secret_key_needs_to_be_long_enough")
+    mock_auth.get_session_from_cookies = AsyncMock()
+    mock_auth.plugins = {}
+
+    dummy_user = User(
+        id="123",
+        email="test@example.com",
+        name="Test User",
+        username="testuser",
+        created_at=datetime.now(timezone.utc),
+    )
+    dummy_session = Session(
+        id="sid_123",
+        token="valid_token",
+        user_id="123",
+        expires_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
+    )
+
+    request = HttpRequest()
+    request.method = "GET"
+    request.COOKIES = {"qulf_token": "valid"}
+
+    # ---------------------------------------------------------
+    # PART A: Test Dependencies (get_current_user / session)
+    # ---------------------------------------------------------
+
+    # Valid Session
+    mock_auth.get_session_from_cookies.return_value = (dummy_session, dummy_user)
+    user_dep = get_current_user(mock_auth)
+    user = await user_dep(request)
+    assert user.id == dummy_user.id
+
+    session_dep = get_current_session(mock_auth)
+    session = await session_dep(request)
+    assert session.token == dummy_session.token
+
+    # Invalid Session -> Raises QulfException
+    mock_auth.get_session_from_cookies.return_value = None
+    with pytest.raises(QulfException, match="Unauthorized"):
+        await user_dep(request)
+    with pytest.raises(QulfException, match="Unauthorized"):
+        await session_dep(request)
+
+    # ---------------------------------------------------------
+    # PART B: Test GET /session Route
+    # ---------------------------------------------------------
+    urls = serve_qulf(mock_auth)
+    # Extract the get_session view from urlpatterns
+    get_session_view = next(p.callback for p in urls if p.name == "get-session")
+
+    # 1. Valid route
+    mock_auth.get_session_from_cookies.return_value = (dummy_session, dummy_user)
+    res = await get_session_view(request)
+    assert res.status_code == 200
+    data = json.loads(res.content)
+    assert data["user"]["id"] == dummy_user.id
+
+    # 2. Invalid session (No token or invalid)
+    mock_auth.get_session_from_cookies.return_value = None
+    res = await get_session_view(request)
+    assert res.status_code == 401
+
+    # 3. Wrong HTTP Method
+    bad_req = HttpRequest()
+    bad_req.method = "POST"
+    res = await get_session_view(bad_req)
+    assert res.status_code == 405

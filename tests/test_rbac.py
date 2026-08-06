@@ -2,7 +2,7 @@ import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 from litestar import Litestar, get
-from litestar.di import Provide
+from litestar.di import NamedDependency, Provide
 from litestar.testing import TestClient as LitestarTestClient
 
 from qulf.config import QulfConfig
@@ -175,11 +175,11 @@ async def test_litestar_rbac_dependencies(memory_db, test_config):
     session = await auth.create_session(user)
 
     @get("/admin", dependencies={"u": Provide(LitestarRequiresRole(auth, "admin"))})
-    async def admin_route(u: User) -> dict:
+    async def admin_route(u: NamedDependency[User]) -> dict:
         return {"msg": "ok"}
 
     @get("/sudo", dependencies={"u": Provide(LitestarRequiresPermission(auth, "sudo"))})
-    async def sudo_route(u: User) -> dict:
+    async def sudo_route(u: NamedDependency[User]) -> dict:
         return {"msg": "ok"}
 
     app = Litestar(route_handlers=[admin_route, sudo_route])

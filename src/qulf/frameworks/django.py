@@ -1,4 +1,5 @@
 import json
+from collections.abc import Callable, Coroutine
 from functools import wraps
 from typing import Any, Literal, cast
 
@@ -17,7 +18,7 @@ from qulf.frameworks import (
     VerifyEmailRequest,
 )
 from qulf.routing import QulfRequest
-from qulf.types import UserCreate
+from qulf.types import Session, User, UserCreate
 
 
 def _get_client_ip(request: HttpRequest) -> str | None:
@@ -46,6 +47,30 @@ def _get_user_agent(request: HttpRequest) -> str | None:
     if hasattr(request, "META"):
         return request.META.get("HTTP_USER_AGENT")
     return None
+
+
+def get_current_session(
+    auth: Qulf,
+) -> Callable[[HttpRequest], Coroutine[Any, Any, Session]]:
+    async def _get(request: HttpRequest) -> Session:
+        session_data = await auth.get_session_from_cookies(request.COOKIES)
+        if not session_data:
+            raise QulfException("Unauthorized")
+        session, _ = session_data
+        return session
+
+    return _get
+
+
+def get_current_user(auth: Qulf) -> Callable[[HttpRequest], Coroutine[Any, Any, User]]:
+    async def _get(request: HttpRequest) -> User:
+        session_data = await auth.get_session_from_cookies(request.COOKIES)
+        if not session_data:
+            raise QulfException("Unauthorized")
+        _, user = session_data
+        return user
+
+    return _get
 
 
 def serve_qulf(auth: Qulf) -> list[Any]:
@@ -109,6 +134,19 @@ def serve_qulf(auth: Qulf) -> list[Any]:
             else "Lax",
         )
         return response
+
+    async def get_session(request: HttpRequest) -> JsonResponse:
+        if request.method != "GET":
+            return JsonResponse({"detail": "Method not allowed"}, status=405)
+
+        session_data = await auth.get_session_from_cookies(request.COOKIES)
+        if not session_data:
+            return JsonResponse({"detail": "Unauthorized"}, status=401)
+
+        session, user = session_data
+        return JsonResponse(
+            {"session": session.model_dump(), "user": user.model_dump()}
+        )
 
     async def sign_out(request: HttpRequest) -> JsonResponse:
         if request.method != "POST":
@@ -190,6 +228,7 @@ def serve_qulf(auth: Qulf) -> list[Any]:
     urlpatterns = [
         path("sign-up", csrf_exempt(sign_up), name="sign-up"),
         path("sign-in", csrf_exempt(sign_in), name="sign-in"),
+        path("session", csrf_exempt(get_session), name="get-session"),
         path("sign-out", csrf_exempt(sign_out), name="sign-out"),
         path("forgot-password", csrf_exempt(forgot_password), name="forgot-password"),
         path("reset-password", csrf_exempt(reset_password), name="reset-password"),

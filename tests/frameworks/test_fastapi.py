@@ -92,7 +92,7 @@ def test_fastapi_account_management_routes(memory_db):
         ).status_code
         == 401
     )
-    assert client.delete("/account").status_code == 401
+    assert client.delete("/delete-account").status_code == 401
 
     # Happy Paths
     from unittest.mock import AsyncMock
@@ -129,7 +129,7 @@ def test_fastapi_account_management_routes(memory_db):
         ).status_code
         == 200
     )
-    assert client.delete("/account").status_code == 200
+    assert client.delete("/delete-account").status_code == 200
 
 
 def test_fastapi_core_exceptions(memory_db):
@@ -163,7 +163,7 @@ def test_fastapi_core_exceptions(memory_db):
         ).status_code
         == 400
     )
-    assert client.delete("/account").status_code == 400
+    assert client.delete("/delete-account").status_code == 400
 
 
 def test_fastapi_sign_up_sign_in_exceptions(memory_db):
@@ -344,3 +344,93 @@ async def test_fastapi_rbac_enforcement():
     auth_mock.get_session_from_cookies.return_value = None
     assert client.get("/dep-roles-all").status_code == 401
     assert client.get("/dep-perms-all").status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_fastapi_current_user_and_session(memory_db):
+    from datetime import datetime, timezone
+    from unittest.mock import AsyncMock
+
+    from fastapi import Depends, FastAPI
+    from fastapi.testclient import TestClient
+
+    from qulf.config import QulfConfig
+    from qulf.core import Qulf
+    from qulf.frameworks.fastapi import (
+        get_current_session,
+        get_current_user,
+        serve_qulf,
+    )
+    from qulf.types import Session, User
+
+    # 1. Mock the Core Qulf Engine
+    auth = Qulf(db=memory_db)
+    auth.config = QulfConfig(secret_key="test_secret_key_needs_to_be_long_enough")
+    auth.get_session_from_cookies = AsyncMock()
+
+    dummy_user = User(
+        id="123",
+        email="test@example.com",
+        name="Test User",
+        username="testuser",
+        created_at=datetime.now(timezone.utc),
+    )
+
+    dummy_session = Session(
+        id="sid_123",
+        token="valid_token",
+        user_id="123",
+        expires_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
+    )
+
+    # 2. Bootstrap FastAPI App
+    app = FastAPI()
+
+    # Mount Qulf routes (includes GET /session)
+    app.include_router(serve_qulf(auth))
+
+    # Mount custom routes to test the dependencies
+    @app.get("/custom-user")
+    def custom_user_route(user: User = Depends(get_current_user(auth))):
+        return {"user_id": user.id}
+
+    @app.get("/custom-session")
+    def custom_session_route(
+        session: Session = Depends(get_current_session(auth)),
+    ):
+        return {"session_token": session.token}
+
+    client = TestClient(app)
+
+    # ---------------------------------------------------------
+    # PART A: Test Valid Session
+    # ---------------------------------------------------------
+    auth.get_session_from_cookies.return_value = (dummy_session, dummy_user)
+
+    # 1. GET /session (The universal frontend SDK route)
+    res_session = client.get("/session")
+    assert res_session.status_code == 200
+    data = res_session.json()
+    assert data["user"]["id"] == dummy_user.id
+    assert data["session"]["token"] == dummy_session.token
+
+    # 2. Custom User Dependency
+    res_custom_user = client.get("/custom-user")
+    assert res_custom_user.status_code == 200
+    assert res_custom_user.json()["user_id"] == dummy_user.id
+
+    # 3. Custom Session Dependency
+    res_custom_session = client.get("/custom-session")
+    assert res_custom_session.status_code == 200
+    assert res_custom_session.json()["session_token"] == dummy_session.token
+
+    # ---------------------------------------------------------
+    # PART B: Test Invalid / Missing Session
+    # ---------------------------------------------------------
+    auth.get_session_from_cookies.return_value = None
+
+    # All should return 401 Unauthorized
+    assert client.get("/session").status_code == 401
+    assert client.get("/custom-user").status_code == 401
+    assert client.get("/custom-session").status_code == 401

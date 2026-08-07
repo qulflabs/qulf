@@ -1,3 +1,33 @@
+## v0.1.0b7 (2026-08-07)
+
+### Feat
+
+- **flask**: add session endpoint and dependency helpers
+- **litestar**: add session endpoint and dependency helpers
+- **django**: add session endpoint and dependency helpers
+- **fastapi**: add session endpoint and dependency helpers
+
+### Fix
+
+- **frameworks**: comment the unhandled server errors prevention on invalid json bodies
+- **frameworks**: handle unauthorized status codes and response types
+
+### Refactor
+
+- **test**: refactor sqlalchemy adapter tests into test classes and fixtures
+- **tests**: refactor core tests and remove obsolete coverage gap file
+- **tests**: refactor rbac test suite structure and mock fixtures
+- **test**: organize provider tests into test classes
+- **tests**: organize rate limit tests into classes and improve type hints
+- **tests**: reorganize passkey plugin tests into classes and add type hints
+
+## v0.1.0b6 (2026-08-04)
+
+### Feat
+
+- **auth**: implemented PasskeyPlugin for WebAuthn support managing registration and authentication
+- **auth**: implemented PasskeyPlugin for WebAuthn support managing registration and authentication
+
 ## v0.1.0b5 (2026-08-01)
 
 ## v0.1.0b4 (2026-08-01)

@@ -17,6 +17,7 @@ uv sync --all-extras
 """
 
 [tasks.zellij]
+description = "Run the zellij terminal multiplexer with the project layout"
 run = "zellij --layout ./zLayout.kdl"
 
 [tasks.format]
@@ -109,7 +110,6 @@ fi
 echo "✅ Repository is ready for release."
 '''
 
-
 [tasks.release]
 description = "Create and publish a release"
 
@@ -198,4 +198,3 @@ python.uv_venv_auto = "create|source"
 
 [settings.npm]
 package_manager = "pnpm"
-

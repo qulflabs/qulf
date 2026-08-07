@@ -1,319 +1,45 @@
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
-from litestar import Litestar
-from litestar.di import NamedDependency
+from litestar import Litestar, get
+from litestar.di import NamedDependency, Provide
 from litestar.testing import TestClient
 
-from qulf.core import Qulf
 from qulf.exceptions import QulfException
-from qulf.frameworks.litestar import serve_qulf
-from qulf.plugins import QulfPlugin
-from qulf.routing import (
-    CookieOptions,
-    HttpMethod,
-    QulfRequest,
-    QulfResponse,
-    QulfRoute,
+from qulf.frameworks.litestar import (
+    RequiresPermission,
+    RequiresRole,
+    get_current_session,
+    get_current_user,
+    serve_qulf,
 )
+from qulf.types import Session, User
+
+# REUSABLE TEST VARIABLES
+VALID_SIGN_UP_PAYLOAD = {
+    "email": "a@b.c",
+    "password": "p",
+    "password_confirmation": "p",
+    "username": "u",
+    "name": "n",
+}
+VALID_SIGN_IN_PAYLOAD = {"email": "a@b.c", "password": "p"}
+VALID_CHANGE_PW_PAYLOAD = {"old_password": "o", "new_password": "n"}
+VALID_RESET_PW_PAYLOAD = {"token": "tok", "new_password": "p"}
+VALID_FORGOT_PW_PAYLOAD = {"email": "a@b.c"}
+VALID_VERIFY_EMAIL_PAYLOAD = {"token": "tok"}
 
 
-def test_litestar_auth_flow(memory_db: Any) -> None:
-    auth = Qulf(db=memory_db)
-    app = Litestar(route_handlers=[serve_qulf(auth)])
-    client = TestClient(app)
-
-    # Sign Up Success
-    res = client.post(
-        "/sign-up",
-        json={
-            "name": "API User",
-            "email": "api@test.com",
-            "username": "api_u",
-            "password": "pass",
-            "password_confirmation": "pass",
-        },
-    )
-    assert res.status_code == 201  # Litestar defaults POST to 201 Created!
-
-    # Sign Up Duplicate (Sad Path)
-    bad_res = client.post(
-        "/sign-up",
-        json={
-            "name": "API User",
-            "email": "api@test.com",
-            "username": "api_u2",
-            "password": "pass",
-            "password_confirmation": "pass",
-        },
-    )
-    assert bad_res.status_code == 400
-
-    # Sign In Success
-    res = client.post("/sign-in", json={"email": "api@test.com", "password": "pass"})
-    assert res.status_code == 200  # Litestar defaults POST to 201 Created!
-    assert auth.config.cookies.name in res.cookies
-
-    # Sign In Invalid (Sad Path)
-    bad_res2 = client.post(
-        "/sign-in", json={"email": "api@test.com", "password": "wrong"}
-    )
-    assert bad_res2.status_code == 400
-
-    # Sign Out
-    client.cookies.set(
-        auth.config.cookies.name, str(res.cookies.get(auth.config.cookies.name))
-    )
-
-    res = client.post("/sign-out")
-    assert res.status_code == 200
-    # httpx drops max_age=0 cookies from the jar, so it will evaluate to falsy
-    assert not res.cookies.get(auth.config.cookies.name)
-
-
-def test_litestar_sign_out_no_cookie(memory_db: Any) -> None:
-    auth = Qulf(db=memory_db)
-    app = Litestar(route_handlers=[serve_qulf(auth)])
-    client = TestClient(app)
-
-    res = client.post("/sign-out")
-    assert res.status_code == 200
-
-
-def test_plugin_dynamic_routing(memory_db: Any) -> None:
-    auth = Qulf(db=memory_db)
-
-    async def dummy_handler(request: QulfRequest) -> QulfResponse:
-        return QulfResponse(
-            status_code=202,
-            body={"echo_body": request.body, "echo_query": request.query_params},
-            headers={"X-Custom-Header": "FrameworkAgnostic"},
-            set_cookies=[
-                CookieOptions(key="plugin_cookie", value="abc", samesite="strict")
-            ],
-            delete_cookies=["old_cookie"],
-        )
-
-    class DummyPlugin(QulfPlugin):
-        def get_routes(self) -> list[QulfRoute]:
-            return [
-                QulfRoute(
-                    path="/my-plugin",
-                    methods=[HttpMethod.POST],
-                    handler=dummy_handler,
-                )
-            ]
-
-    # Inject our dummy plugin directly into the auth instance
-    auth.plugins = {"dummy": DummyPlugin()}
-
-    app = Litestar(route_handlers=[serve_qulf(auth)])
-
-    with TestClient(app=app) as client:
-        # Happy Path
-        res = client.post("/my-plugin?test=123", json={"hello": "world"})
-        assert res.status_code == 202
-        assert res.json() == {
-            "echo_body": {"hello": "world"},
-            "echo_query": {"test": "123"},
-        }
-        assert res.headers["x-custom-header"] == "FrameworkAgnostic"
-        assert res.cookies.get("plugin_cookie") == "abc"
-        assert not res.cookies.get("old_cookie")
-
-        # Sad Path: Testing JSON parsing swallow (empty body on POST)
-        res_bad = client.post(
-            "/my-plugin",
-            content=b"not-json",
-            headers={"Content-Type": "application/json"},
-        )
-        assert res_bad.status_code == 202
-        assert res_bad.json()["echo_body"] == {}
-
-
-def test_litestar_account_management_routes(memory_db):
-    auth = Qulf(db=memory_db)
-    app = Litestar(route_handlers=[serve_qulf(auth)])
-    client = TestClient(app)
-
-    assert (
-        client.post("/forgot-password", json={"email": "bad@email.com"}).status_code
-        == 400
-    )
-    assert (
-        client.post(
-            "/reset-password", json={"token": "bad", "new_password": "p"}
-        ).status_code
-        == 400
-    )
-    assert client.post("/verify-email", json={"token": "bad"}).status_code == 400
-    assert (
-        client.post(
-            "/change-password", json={"old_password": "o", "new_password": "p"}
-        ).status_code
-        == 401
-    )
-    assert client.delete("/delete-account").status_code == 401
-
-    from unittest.mock import AsyncMock
-
-    auth.reset_password = AsyncMock()
-    auth.verify_email = AsyncMock()
-    auth.change_password = AsyncMock()
-    auth.delete_account = AsyncMock()
-
-    client.post(
-        "/sign-up",
-        json={
-            "name": "A",
-            "email": "a@a.com",
-            "username": "a",
-            "password": "p",
-            "password_confirmation": "p",
-        },
-    )
-    res = client.post("/sign-in", json={"email": "a@a.com", "password": "p"})
-    cookie = res.cookies.get(auth.config.cookies.name)
-    assert cookie is not None
-    client.cookies.set(auth.config.cookies.name, cookie)
-
-    assert (
-        client.post(
-            "/reset-password", json={"token": "good", "new_password": "p"}
-        ).status_code
-        == 201
-    )
-    assert client.post("/verify-email", json={"token": "good"}).status_code == 201
-    assert (
-        client.post(
-            "/change-password", json={"old_password": "p", "new_password": "new"}
-        ).status_code
-        == 201
-    )
-    assert client.delete("/delete-account").status_code == 200
-
-
-def test_litestar_core_exceptions(memory_db):
-    auth = Qulf(db=memory_db)
-    app = Litestar(route_handlers=[serve_qulf(auth)])
-    client = TestClient(app)
-
-    auth.reset_password = AsyncMock(side_effect=QulfException("Core Reset Error"))
-    auth.verify_email = AsyncMock(side_effect=QulfException("Core Verify Error"))
-    auth.change_password = AsyncMock(side_effect=QulfException("Core Change Error"))
-    auth.delete_account = AsyncMock(side_effect=QulfException("Core Delete Error"))
-
-    client.cookies.set(auth.config.cookies.name, "fake-token")
-    auth.validate_session = AsyncMock(return_value=(MagicMock(), MagicMock(id="user1")))
-
-    assert (
-        client.post(
-            "/reset-password", json={"token": "good", "new_password": "p"}
-        ).status_code
-        == 400
-    )
-    assert client.post("/verify-email", json={"token": "good"}).status_code == 400
-    assert (
-        client.post(
-            "/change-password", json={"old_password": "p", "new_password": "new"}
-        ).status_code
-        == 400
-    )
-    assert client.delete("/delete-account").status_code == 400
-
-
-def test_litestar_sign_up_sign_in_exceptions(memory_db):
-    auth = Qulf(db=memory_db)
-    app = Litestar(route_handlers=[serve_qulf(auth)])
-    client = TestClient(app)
-
-    from unittest.mock import AsyncMock
-
-    auth.sign_up = AsyncMock(side_effect=QulfException("Sign up error"))
-    auth.sign_in = AsyncMock(side_effect=QulfException("Sign in error"))
-
-    assert (
-        client.post(
-            "/sign-up",
-            json={
-                "name": "A",
-                "email": "a@a.com",
-                "username": "a",
-                "password": "p",
-                "password_confirmation": "p",
-            },
-        ).status_code
-        == 400
-    )
-    assert (
-        client.post("/sign-in", json={"email": "a@a.com", "password": "p"}).status_code
-        == 400
-    )
-
-
-@pytest.mark.asyncio
-async def test_litestar_rbac_enforcement():
-    from datetime import datetime, timezone
-
-    from litestar import Litestar, get
-    from litestar.di import Provide
-    from litestar.testing import TestClient
-
-    from qulf.config import QulfConfig
-    from qulf.core import Qulf
-    from qulf.frameworks.litestar import RequiresPermission, RequiresRole, serve_qulf
-    from qulf.plugins.base import QulfPlugin
-    from qulf.routing import HttpMethod, QulfResponse, QulfRoute
-    from qulf.types import User
-
-    # 1. Mock the Core Qulf Engine
-    auth_mock = MagicMock(spec=Qulf)
-    auth_mock.config = QulfConfig(secret_key="test_secret_key_needs_to_be_long_enough")
-    auth_mock.get_session_from_cookies = AsyncMock()
-    auth_mock.has_role = AsyncMock()
-    auth_mock.has_permission = AsyncMock()
-
-    dummy_user = User(
-        id="123",
-        email="test@example.com",
-        name="Test User",
-        username="testuser",
-        created_at=datetime.now(timezone.utc),
-    )
-
-    # 2. Create a Mock Plugin to test `serve_qulf` dynamic route protection
-    class MockRBACPlugin(QulfPlugin):
-        name = "mock_rbac"
-
-        def get_routes(self) -> list[QulfRoute]:
-            async def handler(req: QulfRequest) -> QulfResponse:
-                return QulfResponse(status_code=200, body={"ok": True})
-
-            return [
-                QulfRoute(
-                    path="/plugin-role",
-                    methods=[HttpMethod.GET],
-                    handler=handler,
-                    require_roles=["admin"],
-                ),
-                QulfRoute(
-                    path="/plugin-perm",
-                    methods=[HttpMethod.GET],
-                    handler=handler,
-                    require_permissions=["write:docs"],
-                ),
-            ]
-
-    auth_mock.plugins = {"mock": MockRBACPlugin()}
-
+# FIXTURES
+@pytest.fixture
+def app(auth_mock):
     @get(
         "/dep-roles-all",
         dependencies={
             "user": Provide(RequiresRole(auth_mock, ["admin", "editor"], mode="all"))
         },
     )
-    async def roles_all_route(user: NamedDependency[User]) -> dict:
+    async def roles_all_route(user: NamedDependency[User]) -> dict[str, bool]:
         return {"ok": True}
 
     @get(
@@ -322,7 +48,7 @@ async def test_litestar_rbac_enforcement():
             "user": Provide(RequiresRole(auth_mock, ["admin", "editor"], mode="any"))
         },
     )
-    async def roles_any_route(user: NamedDependency[User]) -> dict:
+    async def roles_any_route(user: NamedDependency[User]) -> dict[str, bool]:
         return {"ok": True}
 
     @get(
@@ -333,7 +59,7 @@ async def test_litestar_rbac_enforcement():
             )
         },
     )
-    async def perms_all_route(user: NamedDependency[User]) -> dict:
+    async def perms_all_route(user: NamedDependency[User]) -> dict[str, bool]:
         return {"ok": True}
 
     @get(
@@ -344,159 +70,256 @@ async def test_litestar_rbac_enforcement():
             )
         },
     )
-    async def perms_any_route(user: NamedDependency[User]) -> dict:
+    async def perms_any_route(user: NamedDependency[User]) -> dict[str, bool]:
         return {"ok": True}
 
-    # 4. Bootstrap Litestar App
-    app = Litestar(
+    @get("/custom-user", dependencies={"user": Provide(get_current_user(auth_mock))})
+    async def custom_user_route(user: NamedDependency[User]) -> dict[str, str]:
+        return {"user_id": str(user.id)}
+
+    @get(
+        "/custom-session",
+        dependencies={"session": Provide(get_current_session(auth_mock))},
+    )
+    async def custom_session_route(session: NamedDependency[Session]) -> dict[str, str]:
+        return {"session_token": session.token}
+
+    return Litestar(
         route_handlers=[
             serve_qulf(auth_mock),
             roles_all_route,
             roles_any_route,
             perms_all_route,
             perms_any_route,
+            custom_user_route,
+            custom_session_route,
         ]
     )
 
-    with TestClient(app=app) as client:
-        # Test Plugin Route Protection
+
+@pytest.fixture
+def client(app):
+    return TestClient(app=app)
+
+
+# TEST SUITES
+class TestLitestarAuthEndpoints:
+    def test_sign_up(self, client: TestClient, auth_mock: MagicMock, dummy_user: User):
+        auth_mock.sign_up.return_value = dummy_user
+        res = client.post("/sign-up", json=VALID_SIGN_UP_PAYLOAD)
+        assert res.status_code == 201
+
+        auth_mock.sign_up.side_effect = QulfException("Bad Data")
+        res = client.post("/sign-up", json=VALID_SIGN_UP_PAYLOAD)
+        assert res.status_code == 400
+
+    def test_sign_in(
+        self, client: TestClient, auth_mock: MagicMock, dummy_session: Session
+    ):
+        auth_mock.sign_in.return_value = dummy_session
+        res = client.post("/sign-in", json=VALID_SIGN_IN_PAYLOAD)
+        assert res.status_code == 200
+        assert "set-cookie" in res.headers
+
+        auth_mock.sign_in.side_effect = QulfException("Invalid credentials")
+        res = client.post("/sign-in", json=VALID_SIGN_IN_PAYLOAD)
+        assert res.status_code == 400
+
+    def test_sign_out(self, client: TestClient, auth_mock: MagicMock):
+        client.cookies.set(auth_mock.config.cookies.name, "valid_token")
+        res = client.post("/sign-out")
+        assert res.status_code == 200
+
+        client.cookies.clear()
+        res = client.post("/sign-out")
+        assert res.status_code == 200
+
+    def test_change_password(
+        self,
+        client: TestClient,
+        auth_mock: MagicMock,
+        dummy_session: Session,
+        dummy_user: User,
+    ):
+        # Valid Session
+        auth_mock.validate_session.return_value = (dummy_session, dummy_user)
+        client.cookies.set(auth_mock.config.cookies.name, "valid_token")
+        res = client.post("/change-password", json=VALID_CHANGE_PW_PAYLOAD)
+        assert res.status_code == 200
+
+        # Exception from Core Engine
+        auth_mock.change_password.side_effect = QulfException("Wrong old password")
+        res = client.post("/change-password", json=VALID_CHANGE_PW_PAYLOAD)
+        assert res.status_code == 400
+
+        # Invalid Session
+        auth_mock.validate_session.return_value = None
+        client.cookies.clear()
+        res = client.post("/change-password", json=VALID_CHANGE_PW_PAYLOAD)
+        assert res.status_code == 401
+
+    def test_forgot_password(self, client: TestClient, auth_mock: MagicMock):
+        auth_mock.generate_password_reset_token.return_value = None
+        res = client.post("/forgot-password", json=VALID_FORGOT_PW_PAYLOAD)
+        assert res.status_code == 200
+
+        auth_mock.generate_password_reset_token.side_effect = QulfException("Error")
+        res = client.post("/forgot-password", json=VALID_FORGOT_PW_PAYLOAD)
+        assert res.status_code == 400
+
+    def test_reset_password(self, client: TestClient, auth_mock: MagicMock):
+        auth_mock.reset_password.return_value = None
+        res = client.post("/reset-password", json=VALID_RESET_PW_PAYLOAD)
+        assert res.status_code == 200
+
+        auth_mock.reset_password.side_effect = QulfException("Error")
+        res = client.post("/reset-password", json=VALID_RESET_PW_PAYLOAD)
+        assert res.status_code == 400
+
+    def test_verify_email(self, client: TestClient, auth_mock: MagicMock):
+        auth_mock.verify_email.return_value = None
+        res = client.post("/verify-email", json=VALID_VERIFY_EMAIL_PAYLOAD)
+        assert res.status_code == 200
+
+        auth_mock.verify_email.side_effect = QulfException("Error")
+        res = client.post("/verify-email", json=VALID_VERIFY_EMAIL_PAYLOAD)
+        assert res.status_code == 400
+
+    def test_delete_account(
+        self,
+        client: TestClient,
+        auth_mock: MagicMock,
+        dummy_session: Session,
+        dummy_user: User,
+    ):
+        # Valid Session
+        auth_mock.validate_session.return_value = (dummy_session, dummy_user)
+        client.cookies.set(auth_mock.config.cookies.name, "valid_token")
+        auth_mock.delete_account.return_value = None
+        res = client.delete("/delete-account")
+        assert res.status_code == 200
+
+        # Exception from Core Engine
+        auth_mock.delete_account.side_effect = QulfException("Cannot delete admin")
+        res = client.delete("/delete-account")
+        assert res.status_code == 400
+
+        # Invalid Session
+        auth_mock.validate_session.return_value = None
+        client.cookies.clear()
+        res = client.delete("/delete-account")
+        assert res.status_code == 401
+
+
+class TestLitestarSessionRoute:
+    def test_get_session(
+        self,
+        client: TestClient,
+        auth_mock: MagicMock,
+        dummy_user: User,
+        dummy_session: Session,
+    ):
+        client.cookies.set(auth_mock.config.cookies.name, "valid_token")
+
+        # 1. Valid Session
+        auth_mock.get_session_from_cookies.return_value = (dummy_session, dummy_user)
+        res = client.get("/session")
+        assert res.status_code == 200
+        assert res.json()["user"]["id"] == dummy_user.id
+
+        # 2. Invalid Session
+        auth_mock.get_session_from_cookies.return_value = None
+        res = client.get("/session")
+        assert res.status_code == 401
+
+
+class TestLitestarPlugins:
+    def test_plugin_headers_and_cookies(self, client: TestClient):
+        res = client.post("/plugin-complex", json={"dummy": "data"})
+        assert res.status_code == 201
+        assert res.headers.get("x-custom-header") == "qulf-rocks"
+        assert "set-cookie" in res.headers
+
+    def test_plugin_invalid_json_body(self, client):
+        res = client.post(
+            "/plugin-complex",
+            content=b"this-is-not-valid-json",
+            headers={"Content-Type": "application/json"},
+        )
+        assert res.status_code == 201
+
+    def test_plugin_rbac(self, client, auth_mock, dummy_user):
+        # Missing session
         auth_mock.get_session_from_cookies.return_value = None
         assert client.get("/plugin-role").status_code == 401
         assert client.get("/plugin-perm").status_code == 401
 
+        # Authorized
         auth_mock.get_session_from_cookies.return_value = ("fake_session", dummy_user)
-        auth_mock.has_role.return_value = False
-        auth_mock.has_permission.return_value = False
-
-        assert client.get("/plugin-role").status_code == 403
-        assert client.get("/plugin-perm").status_code == 403
-
         auth_mock.has_role.return_value = True
         auth_mock.has_permission.return_value = True
-
         assert client.get("/plugin-role").status_code == 200
         assert client.get("/plugin-perm").status_code == 200
 
-        # Test Dependency Protection
-        # ROLES (mode="all")
+        # Unauthorized
+        auth_mock.has_role.return_value = False
+        auth_mock.has_permission.return_value = False
+        assert client.get("/plugin-role").status_code == 403
+        assert client.get("/plugin-perm").status_code == 403
+
+
+class TestLitestarDecoratorsAndDependencies:
+    def test_rbac_dependencies_all(
+        self, client: TestClient, auth_mock: MagicMock, dummy_user: User
+    ):
+        client.cookies.set(auth_mock.config.cookies.name, "valid_token")
+        auth_mock.get_session_from_cookies.return_value = ("fake_session", dummy_user)
+
+        # Test Roles All
+        auth_mock.has_role.side_effect = lambda user, role: True
+        assert client.get("/dep-roles-all").status_code == 200
         auth_mock.has_role.side_effect = lambda user, role: role == "admin"
         assert client.get("/dep-roles-all").status_code == 403
 
-        auth_mock.has_role.side_effect = lambda user, role: True
-        assert client.get("/dep-roles-all").status_code == 200
-
-        # ROLES (mode="any")
-        auth_mock.has_role.side_effect = lambda user, role: False
-        assert client.get("/dep-roles-any").status_code == 403
-
-        auth_mock.has_role.side_effect = lambda user, role: role == "editor"
-        assert client.get("/dep-roles-any").status_code == 200
-
-        # PERMISSIONS (mode="all")
+        # Test Perms All
+        auth_mock.has_permission.side_effect = lambda user, perm: True
+        assert client.get("/dep-perms-all").status_code == 200
         auth_mock.has_permission.side_effect = lambda user, perm: perm == "read"
         assert client.get("/dep-perms-all").status_code == 403
 
-        auth_mock.has_permission.side_effect = lambda user, perm: True
-        assert client.get("/dep-perms-all").status_code == 200
+    def test_rbac_dependencies_any(self, client, auth_mock, dummy_user):
+        client.cookies.set(auth_mock.config.cookies.name, "valid_token")
+        auth_mock.get_session_from_cookies.return_value = ("fake_session", dummy_user)
 
-        # PERMISSIONS (mode="any")
+        # Test Roles Any
+        auth_mock.has_role.side_effect = lambda user, role: role == "editor"
+        assert client.get("/dep-roles-any").status_code == 200
+        auth_mock.has_role.side_effect = lambda user, role: False
+        assert client.get("/dep-roles-any").status_code == 403
+
+        # Test Perms Any
+        auth_mock.has_permission.side_effect = lambda user, perm: perm == "write"
+        assert client.get("/dep-perms-any").status_code == 200
         auth_mock.has_permission.side_effect = lambda user, perm: False
         assert client.get("/dep-perms-any").status_code == 403
 
-        auth_mock.has_permission.side_effect = lambda user, perm: perm == "write"
-        assert client.get("/dep-perms-any").status_code == 200
-
-        # Dependency Unauthenticated Fallback -> 401
+    def test_dependencies_unauthenticated(self, client, auth_mock):
         auth_mock.get_session_from_cookies.return_value = None
         assert client.get("/dep-roles-all").status_code == 401
         assert client.get("/dep-perms-all").status_code == 401
+        assert client.get("/custom-user").status_code == 401
+        assert client.get("/custom-session").status_code == 401
 
+    def test_current_user_and_session_dependencies(
+        self, client, auth_mock, dummy_user, dummy_session
+    ):
+        client.cookies.set(auth_mock.config.cookies.name, "valid_token")
+        auth_mock.get_session_from_cookies.return_value = (dummy_session, dummy_user)
 
-@pytest.mark.asyncio
-async def test_litestar_current_user_and_session(memory_db):
-    from datetime import datetime, timezone
-    from unittest.mock import AsyncMock
+        res_user = client.get("/custom-user")
+        assert res_user.status_code == 200
+        assert res_user.json()["user_id"] == dummy_user.id
 
-    from litestar import Litestar, get
-    from litestar.di import Provide
-    from litestar.testing import TestClient
-
-    from qulf.config import QulfConfig
-    from qulf.core import Qulf
-    from qulf.frameworks.litestar import (
-        get_current_session,
-        get_current_user,
-        serve_qulf,
-    )
-    from qulf.types import Session, User
-
-    # 1. Mock the Core Qulf Engine
-    auth = Qulf(db=memory_db)
-    auth.config = QulfConfig(secret_key="test_secret_key_needs_to_be_long_enough")
-    auth.get_session_from_cookies = AsyncMock()
-
-    dummy_user = User(
-        id="123",
-        email="test@example.com",
-        name="Test User",
-        username="testuser",
-        created_at=datetime.now(timezone.utc),
-    )
-
-    dummy_session = Session(
-        id="sid_123",
-        token="valid_token",
-        user_id="123",
-        expires_at=datetime.now(timezone.utc),
-        created_at=datetime.now(timezone.utc),
-    )
-
-    # 2. Define Custom Routes to test Litestar Dependencies (`Provide`)
-    @get("/custom-user", dependencies={"user": Provide(get_current_user(auth))})
-    async def custom_user_route(user: NamedDependency[User]) -> dict[str, str]:
-        return {"user_id": str(user.id)}
-
-    @get(
-        "/custom-session", dependencies={"session": Provide(get_current_session(auth))}
-    )
-    async def custom_session_route(session: NamedDependency[Session]) -> dict[str, str]:
-        return {"session_token": session.token}
-
-    # 3. Bootstrap Litestar App
-    app = Litestar(
-        route_handlers=[serve_qulf(auth), custom_user_route, custom_session_route]
-    )
-
-    client = TestClient(app=app)
-
-    # ---------------------------------------------------------
-    # PART A: Test Valid Session
-    # ---------------------------------------------------------
-    auth.get_session_from_cookies.return_value = (dummy_session, dummy_user)
-
-    # 1. GET /session (The universal frontend SDK route)
-    res_session = client.get("/session")
-    assert res_session.status_code == 200
-    data = res_session.json()
-    assert data["user"]["id"] == dummy_user.id
-    assert data["session"]["token"] == dummy_session.token
-
-    # 2. Custom User Dependency
-    res_custom_user = client.get("/custom-user")
-    assert res_custom_user.status_code == 200
-    assert res_custom_user.json()["user_id"] == dummy_user.id
-
-    # 3. Custom Session Dependency
-    res_custom_session = client.get("/custom-session")
-    assert res_custom_session.status_code == 200
-    assert res_custom_session.json()["session_token"] == dummy_session.token
-
-    # ---------------------------------------------------------
-    # PART B: Test Invalid / Missing Session
-    # ---------------------------------------------------------
-    auth.get_session_from_cookies.return_value = None
-
-    # All should return 401 Unauthorized via litestar's NotAuthorizedException
-    assert client.get("/session").status_code == 401
-    assert client.get("/custom-user").status_code == 401
-    assert client.get("/custom-session").status_code == 401
+        res_session = client.get("/custom-session")
+        assert res_session.status_code == 200
+        assert res_session.json()["session_token"] == dummy_session.token

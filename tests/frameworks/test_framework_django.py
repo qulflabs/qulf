@@ -61,41 +61,76 @@ def django_views(auth_mock: MagicMock) -> dict[str, Any]:
     }
 
 
-# TEST SUITES
 class DummyRequest:
     pass
 
 
+# TEST SUITES
 class TestDjangoHelpers:
     def test_get_client_ip(self) -> None:
+        # Standard Forwarded
         req1 = DummyRequest()
         req1.headers = {"X-Forwarded-For": "192.168.1.1, 10.0.0.1"}
         assert _get_client_ip(req1) == "192.168.1.1"
 
+        # Headers exist, but X-Forwarded-For is missing (Falls back to META)
+        req_no_xfwd = DummyRequest()
+        req_no_xfwd.headers = {"Other": "Value"}
+        req_no_xfwd.META = {"REMOTE_ADDR": "10.0.0.5"}
+        assert _get_client_ip(req_no_xfwd) == "10.0.0.5"
+
+        # Standard META HTTP_X_FORWARDED_FOR
         req2 = DummyRequest()
         req2.META = {"HTTP_X_FORWARDED_FOR": "10.0.0.2"}
         assert _get_client_ip(req2) == "10.0.0.2"
 
-        req3 = DummyRequest()
-        req3.META = {"REMOTE_ADDR": "127.0.0.1"}
-        assert _get_client_ip(req3) == "127.0.0.1"
+        # Empty string in META (Falls back to REMOTE_ADDR)
+        req_empty_xfwd = DummyRequest()
+        req_empty_xfwd.META = {
+            "HTTP_X_FORWARDED_FOR": "",
+            "REMOTE_ADDR": "192.168.1.200",
+        }
+        assert _get_client_ip(req_empty_xfwd) == "192.168.1.200"
 
+        # Invalid type in META (Falls back to REMOTE_ADDR)
+        req_bad_type = DummyRequest()
+        req_bad_type.META = {
+            "HTTP_X_FORWARDED_FOR": ["10.0.0.2"],
+            "REMOTE_ADDR": "192.168.1.100",
+        }
+        assert _get_client_ip(req_bad_type) == "192.168.1.100"
+
+        # No headers, empty META
         req4 = DummyRequest()
         req4.META = {}
         assert _get_client_ip(req4) is None
 
     def test_get_user_agent(self) -> None:
+        # Standard Header
         req1 = DummyRequest()
         req1.headers = {"User-Agent": "TestBrowser/1.0"}
         assert _get_user_agent(req1) == "TestBrowser/1.0"
 
+        # Headers exist, but User-Agent is missing
+        req_no_ua = DummyRequest()
+        req_no_ua.headers = {"Other": "yes"}
+        assert _get_user_agent(req_no_ua) is None
+
+        # Standard META
         req2 = DummyRequest()
         req2.META = {"HTTP_USER_AGENT": "LegacyBrowser/1.0"}
         assert _get_user_agent(req2) == "LegacyBrowser/1.0"
 
+        # No headers, empty META
         req3 = DummyRequest()
         req3.META = {}
         assert _get_user_agent(req3) is None
+
+    def test_helpers_no_attributes_at_all(self) -> None:
+        bare_req = DummyRequest()
+
+        assert _get_client_ip(bare_req) is None
+        assert _get_user_agent(bare_req) is None
 
 
 @pytest.mark.asyncio
@@ -158,7 +193,6 @@ class TestDjangoAuthEndpoints:
         res = await view(req)
         assert res.status_code == 200
         assert "qulf_session" in res.cookies
-        # Using dynamic dummy_session.token to respect conftest.py overrides
         assert res.cookies["qulf_session"].value == dummy_session.token
 
         assert (await view(rf.get("/sign-in"))).status_code == 405
@@ -172,6 +206,27 @@ class TestDjangoAuthEndpoints:
             )
         )
         assert res_exc.status_code == 400
+
+    async def test_sign_in_no_samesite(
+        self,
+        rf: RequestFactory,
+        auth_mock: MagicMock,
+        dummy_session: MagicMock,
+        django_views: dict[str, Any],
+    ) -> None:
+        auth_mock.config.cookies.same_site = None
+        auth_mock.sign_in.return_value = dummy_session
+        view = django_views["sign-in"]
+
+        req = rf.post(
+            "/sign-in",
+            data=json.dumps(VALID_SIGN_IN_PAYLOAD),
+            content_type="application/json",
+        )
+        res = await view(req)
+
+        assert res.status_code == 200
+        assert res.cookies["qulf_session"]["samesite"] == "Lax"
 
     async def test_sign_out(
         self, rf: RequestFactory, django_views: dict[str, Any]
@@ -236,6 +291,7 @@ class TestDjangoAuthEndpoints:
     ) -> None:
         view = django_views["change-password"]
 
+        # Valid Request
         req = rf.post(
             "/change-password",
             data=json.dumps(VALID_CHANGE_PW_PAYLOAD),
@@ -243,21 +299,52 @@ class TestDjangoAuthEndpoints:
         )
         req.COOKIES["qulf_session"] = "valid-token"
         auth_mock.validate_session.return_value = (MagicMock(), MagicMock(id="user_1"))
-
         assert (await view(req)).status_code == 200
+
+        # Method Not Allowed
         assert (await view(rf.get("/change-password"))).status_code == 405
+
+        # Missing Token
+        req_missing = rf.post(
+            "/change-password",
+            data=json.dumps(VALID_CHANGE_PW_PAYLOAD),
+            content_type="application/json",
+        )
+        assert (await view(req_missing)).status_code == 401
+
+        # Invalid Token
+        req_invalid = rf.post(
+            "/change-password",
+            data=json.dumps(VALID_CHANGE_PW_PAYLOAD),
+            content_type="application/json",
+        )
+        req_invalid.COOKIES["qulf_session"] = "bad-token"
+        auth_mock.validate_session.return_value = None
+        assert (await view(req_invalid)).status_code == 401
 
     async def test_delete_account(
         self, rf: RequestFactory, auth_mock: MagicMock, django_views: dict[str, Any]
     ) -> None:
         view = django_views["delete-account"]
 
+        # Valid Request
         req = rf.delete("/delete-account")
         req.COOKIES["qulf_session"] = "valid-token"
         auth_mock.validate_session.return_value = (MagicMock(), MagicMock(id="user_1"))
-
         assert (await view(req)).status_code == 200
+
+        # Method Not Allowed
         assert (await view(rf.post("/delete-account"))).status_code == 405
+
+        # Missing Token
+        req_missing = rf.delete("/delete-account")
+        assert (await view(req_missing)).status_code == 401
+
+        # Invalid Token
+        req_invalid = rf.delete("/delete-account")
+        req_invalid.COOKIES["qulf_session"] = "bad-token"
+        auth_mock.validate_session.return_value = None
+        assert (await view(req_invalid)).status_code == 401
 
     async def test_django_core_exceptions(
         self, rf: RequestFactory, auth_mock: MagicMock, django_views: dict[str, Any]
@@ -314,6 +401,21 @@ class TestDjangoAuthEndpoints:
         )
         assert (await django_views["sign-in"](req2)).status_code == 400
 
+        # Trigger ValidationError with incomplete dict payloads
+        req3 = rf.post(
+            "/sign-up",
+            data=json.dumps({"email": "incomplete"}),
+            content_type="application/json",
+        )
+        assert (await django_views["sign-up"](req3)).status_code == 400
+
+        req4 = rf.post(
+            "/sign-in",
+            data=json.dumps({"email": "incomplete"}),
+            content_type="application/json",
+        )
+        assert (await django_views["sign-in"](req4)).status_code == 400
+
 
 @pytest.mark.asyncio
 class TestDjangoPlugins:
@@ -326,7 +428,8 @@ class TestDjangoPlugins:
                 body={"echo_body": request.body, "echo_query": request.query_params},
                 headers={"X-Custom-Header": "FrameworkAgnostic"},
                 set_cookies=[
-                    CookieOptions(key="plugin_cookie", value="abc", samesite="strict")
+                    CookieOptions(key="plugin_cookie", value="abc", samesite="strict"),
+                    CookieOptions(key="plugin_cookie_2", value="xyz", samesite="none"),
                 ],
                 delete_cookies=["old_cookie"],
             )
@@ -339,7 +442,6 @@ class TestDjangoPlugins:
         ]
         auth_mock.plugins = {"dummy": mock_plugin}
 
-        # Dynamically evaluate URL patterns after modifying the plugin manifest.
         urlpatterns = serve_qulf(auth_mock)
         plugin_view = urlpatterns[-1].callback
 
@@ -362,6 +464,7 @@ class TestDjangoPlugins:
         assert content["echo_query"] == {"test": "123"}
         assert response["X-Custom-Header"] == "FrameworkAgnostic"
         assert "plugin_cookie" in response.cookies
+        assert "plugin_cookie_2" in response.cookies
 
         req_bad_json = rf.post(
             "/my-plugin", data="bad-json", content_type="application/json"

@@ -1,272 +1,37 @@
-from unittest.mock import AsyncMock, MagicMock
-
 import pytest
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from qulf.core import Qulf
 from qulf.exceptions import QulfException
-from qulf.frameworks.fastapi import serve_qulf
+from qulf.frameworks.fastapi import (
+    RequiresPermission,
+    RequiresRole,
+    get_current_session,
+    get_current_user,
+    serve_qulf,
+)
+from qulf.types import Session, User
 
 
-def test_fastapi_auth_flow(memory_db):
-    auth = Qulf(db=memory_db)
-    app = FastAPI()
-    app.include_router(serve_qulf(auth))
-    client = TestClient(app)
+@pytest.fixture
+def app(auth_mock):
+    fastapi_app = FastAPI()
+    fastapi_app.include_router(serve_qulf(auth_mock))
 
-    res = client.post(
-        "/sign-up",
-        json={
-            "name": "API User",
-            "email": "api@test.com",
-            "username": "api_u",
-            "password": "pass",
-            "password_confirmation": "pass",
-        },
-    )
-    assert res.status_code == 200
-
-    bad_res = client.post(
-        "/sign-up",
-        json={
-            "name": "API User",
-            "email": "api@test.com",
-            "username": "api_u2",
-            "password": "pass",
-            "password_confirmation": "pass",
-        },
-    )
-    assert bad_res.status_code == 400
-
-    res = client.post("/sign-in", json={"email": "api@test.com", "password": "pass"})
-    assert res.status_code == 200
-    assert "qulf_session" in res.cookies
-
-    bad_res2 = client.post(
-        "/sign-in", json={"email": "api@test.com", "password": "wrong"}
-    )
-    assert bad_res2.status_code == 400
-
-    client.cookies.set(
-        auth.config.secret_key, str(res.cookies.get(auth.config.secret_key))
-    )
-
-    res = client.post("/sign-out")
-
-    assert res.status_code == 200
-    assert not res.cookies.get(auth.config.secret_key)
-
-
-def test_fastapi_sign_out_no_cookie(memory_db):
-    auth = Qulf(db=memory_db)
-    app = FastAPI()
-    app.include_router(serve_qulf(auth))
-    client = TestClient(app)
-
-    res = client.post("/sign-out")
-    assert res.status_code == 200
-
-
-def test_fastapi_account_management_routes(memory_db):
-    auth = Qulf(db=memory_db)
-    app = FastAPI()
-    app.include_router(serve_qulf(auth))
-    client = TestClient(app)
-
-    # Sad Paths
-    assert (
-        client.post("/forgot-password", json={"email": "bad@email.com"}).status_code
-        == 400
-    )
-    assert (
-        client.post(
-            "/reset-password", json={"token": "bad", "new_password": "p"}
-        ).status_code
-        == 400
-    )
-    assert client.post("/verify-email", json={"token": "bad"}).status_code == 400
-    assert (
-        client.post(
-            "/change-password", json={"old_password": "o", "new_password": "p"}
-        ).status_code
-        == 401
-    )
-    assert client.delete("/delete-account").status_code == 401
-
-    # Happy Paths
-    from unittest.mock import AsyncMock
-
-    auth.reset_password = AsyncMock()
-    auth.verify_email = AsyncMock()
-    auth.change_password = AsyncMock()
-    auth.delete_account = AsyncMock()
-
-    client.post(
-        "/sign-up",
-        json={
-            "name": "A",
-            "email": "a@a.com",
-            "username": "a",
-            "password": "p",
-            "password_confirmation": "p",
-        },
-    )
-    res = client.post("/sign-in", json={"email": "a@a.com", "password": "p"})
-    cookie = res.cookies.get(auth.config.cookies.name)
-    client.cookies.set(auth.config.cookies.name, cookie)
-
-    assert (
-        client.post(
-            "/reset-password", json={"token": "good", "new_password": "p"}
-        ).status_code
-        == 200
-    )
-    assert client.post("/verify-email", json={"token": "good"}).status_code == 200
-    assert (
-        client.post(
-            "/change-password", json={"old_password": "p", "new_password": "new"}
-        ).status_code
-        == 200
-    )
-    assert client.delete("/delete-account").status_code == 200
-
-
-def test_fastapi_core_exceptions(memory_db):
-    auth = Qulf(db=memory_db)
-    app = FastAPI()
-    app.include_router(serve_qulf(auth))
-    client = TestClient(app)
-
-    # Mock core methods to throw QulfExceptions
-    from unittest.mock import AsyncMock
-
-    auth.reset_password = AsyncMock(side_effect=QulfException("Core Reset Error"))
-    auth.verify_email = AsyncMock(side_effect=QulfException("Core Verify Error"))
-    auth.change_password = AsyncMock(side_effect=QulfException("Core Change Error"))
-    auth.delete_account = AsyncMock(side_effect=QulfException("Core Delete Error"))
-
-    # Bypass auth helper for authenticated routes
-    client.cookies.set(auth.config.cookies.name, "fake-token")
-    auth.validate_session = AsyncMock(return_value=(MagicMock(), MagicMock(id="user1")))
-
-    assert (
-        client.post(
-            "/reset-password", json={"token": "good", "new_password": "p"}
-        ).status_code
-        == 400
-    )
-    assert client.post("/verify-email", json={"token": "good"}).status_code == 400
-    assert (
-        client.post(
-            "/change-password", json={"old_password": "p", "new_password": "new"}
-        ).status_code
-        == 400
-    )
-    assert client.delete("/delete-account").status_code == 400
-
-
-def test_fastapi_sign_up_sign_in_exceptions(memory_db):
-    auth = Qulf(db=memory_db)
-    app = FastAPI()
-    app.include_router(serve_qulf(auth))
-    client = TestClient(app)
-
-    from unittest.mock import AsyncMock
-
-    auth.sign_up = AsyncMock(side_effect=QulfException("Sign up error"))
-    auth.sign_in = AsyncMock(side_effect=QulfException("Sign in error"))
-
-    assert (
-        client.post(
-            "/sign-up",
-            json={
-                "name": "A",
-                "email": "a@a.com",
-                "username": "a",
-                "password": "p",
-                "password_confirmation": "p",
-            },
-        ).status_code
-        == 400
-    )
-    assert (
-        client.post("/sign-in", json={"email": "a@a.com", "password": "p"}).status_code
-        == 400
-    )
-
-
-@pytest.mark.asyncio
-async def test_fastapi_rbac_enforcement():
-    from datetime import datetime, timezone
-
-    from fastapi import Depends, FastAPI
-    from fastapi.testclient import TestClient
-
-    from qulf.config import QulfConfig
-    from qulf.core import Qulf
-    from qulf.frameworks.fastapi import RequiresPermission, RequiresRole, serve_qulf
-    from qulf.plugins.base import QulfPlugin
-    from qulf.routing import HttpMethod, QulfRequest, QulfResponse, QulfRoute
-    from qulf.types import User
-
-    # 1. Mock the Core Qulf Engine
-    auth_mock = MagicMock(spec=Qulf)
-    auth_mock.config = QulfConfig(secret_key="test_secret_key_needs_to_be_long_enough")
-    auth_mock.get_session_from_cookies = AsyncMock()
-    auth_mock.has_role = AsyncMock()
-    auth_mock.has_permission = AsyncMock()
-
-    dummy_user = User(
-        id="123",
-        email="test@example.com",
-        name="Test User",
-        username="testuser",
-        created_at=datetime.now(timezone.utc),
-    )
-
-    # 2. Create a Mock Plugin to test `serve_qulf` dynamic route protection
-    class MockRBACPlugin(QulfPlugin):
-        name = "mock_rbac"
-
-        def get_routes(self) -> list[QulfRoute]:
-            async def handler(req: QulfRequest) -> QulfResponse:
-                return QulfResponse(status_code=200, body={"ok": True})
-
-            return [
-                QulfRoute(
-                    path="/plugin-role",
-                    methods=[HttpMethod.GET],
-                    handler=handler,
-                    require_roles=["admin"],
-                ),
-                QulfRoute(
-                    path="/plugin-perm",
-                    methods=[HttpMethod.GET],
-                    handler=handler,
-                    require_permissions=["write:docs"],
-                ),
-            ]
-
-    auth_mock.plugins = {"mock": MockRBACPlugin()}
-
-    # 3. Bootstrap FastAPI App & test native Dependencies (`Depends`)
-    app = FastAPI()
-    app.include_router(serve_qulf(auth_mock))
-
-    @app.get("/dep-roles-all")
+    # Async Dependency Routes (RBAC)
+    @fastapi_app.get("/dep-roles-all")
     def roles_all_route(
         user: User = Depends(RequiresRole(auth_mock, ["admin", "editor"], mode="all")),
     ):
         return {"ok": True}
 
-    @app.get("/dep-roles-any")
+    @fastapi_app.get("/dep-roles-any")
     def roles_any_route(
         user: User = Depends(RequiresRole(auth_mock, ["admin", "editor"], mode="any")),
     ):
         return {"ok": True}
 
-    @app.get("/dep-perms-all")
+    @fastapi_app.get("/dep-perms-all")
     def perms_all_route(
         user: User = Depends(
             RequiresPermission(auth_mock, ["read", "write"], mode="all")
@@ -274,7 +39,7 @@ async def test_fastapi_rbac_enforcement():
     ):
         return {"ok": True}
 
-    @app.get("/dep-perms-any")
+    @fastapi_app.get("/dep-perms-any")
     def perms_any_route(
         user: User = Depends(
             RequiresPermission(auth_mock, ["read", "write"], mode="any")
@@ -282,155 +47,286 @@ async def test_fastapi_rbac_enforcement():
     ):
         return {"ok": True}
 
-    client = TestClient(app)
-
-    # ---------------------------------------------------------
-    # PART A: Test Plugin Route Protection
-    # ---------------------------------------------------------
-
-    # Unauthenticated -> 401
-    auth_mock.get_session_from_cookies.return_value = None
-    assert client.get("/plugin-role").status_code == 401
-    assert client.get("/plugin-perm").status_code == 401
-
-    # Authenticated, but missing role/permission -> 403
-    auth_mock.get_session_from_cookies.return_value = ("fake_session", dummy_user)
-    auth_mock.has_role.return_value = False
-    auth_mock.has_permission.return_value = False
-
-    assert client.get("/plugin-role").status_code == 403
-    assert client.get("/plugin-perm").status_code == 403
-
-    # Authenticated, has role/permission -> 200
-    auth_mock.has_role.return_value = True
-    auth_mock.has_permission.return_value = True
-
-    assert client.get("/plugin-role").status_code == 200
-    assert client.get("/plugin-perm").status_code == 200
-
-    # ---------------------------------------------------------
-    # PART B: Test Dependency Protection
-    # ---------------------------------------------------------
-
-    # 1. ROLES (mode="all")
-    auth_mock.has_role.side_effect = lambda user, role: role == "admin"
-    assert client.get("/dep-roles-all").status_code == 403
-
-    auth_mock.has_role.side_effect = lambda user, role: True
-    assert client.get("/dep-roles-all").status_code == 200
-
-    # 2. ROLES (mode="any")
-    auth_mock.has_role.side_effect = lambda user, role: False
-    assert client.get("/dep-roles-any").status_code == 403
-
-    auth_mock.has_role.side_effect = lambda user, role: role == "editor"
-    assert client.get("/dep-roles-any").status_code == 200
-
-    # 3. PERMISSIONS (mode="all")
-    auth_mock.has_permission.side_effect = lambda user, perm: perm == "read"
-    assert client.get("/dep-perms-all").status_code == 403
-
-    auth_mock.has_permission.side_effect = lambda user, perm: True
-    assert client.get("/dep-perms-all").status_code == 200
-
-    # 4. PERMISSIONS (mode="any")
-    auth_mock.has_permission.side_effect = lambda user, perm: False
-    assert client.get("/dep-perms-any").status_code == 403
-
-    auth_mock.has_permission.side_effect = lambda user, perm: perm == "write"
-    assert client.get("/dep-perms-any").status_code == 200
-
-    # 5. Dependency Unauthenticated Fallback -> 401
-    auth_mock.get_session_from_cookies.return_value = None
-    assert client.get("/dep-roles-all").status_code == 401
-    assert client.get("/dep-perms-all").status_code == 401
-
-
-@pytest.mark.asyncio
-async def test_fastapi_current_user_and_session(memory_db):
-    from datetime import datetime, timezone
-    from unittest.mock import AsyncMock
-
-    from fastapi import Depends, FastAPI
-    from fastapi.testclient import TestClient
-
-    from qulf.config import QulfConfig
-    from qulf.core import Qulf
-    from qulf.frameworks.fastapi import (
-        get_current_session,
-        get_current_user,
-        serve_qulf,
-    )
-    from qulf.types import Session, User
-
-    # 1. Mock the Core Qulf Engine
-    auth = Qulf(db=memory_db)
-    auth.config = QulfConfig(secret_key="test_secret_key_needs_to_be_long_enough")
-    auth.get_session_from_cookies = AsyncMock()
-
-    dummy_user = User(
-        id="123",
-        email="test@example.com",
-        name="Test User",
-        username="testuser",
-        created_at=datetime.now(timezone.utc),
-    )
-
-    dummy_session = Session(
-        id="sid_123",
-        token="valid_token",
-        user_id="123",
-        expires_at=datetime.now(timezone.utc),
-        created_at=datetime.now(timezone.utc),
-    )
-
-    # 2. Bootstrap FastAPI App
-    app = FastAPI()
-
-    # Mount Qulf routes (includes GET /session)
-    app.include_router(serve_qulf(auth))
-
-    # Mount custom routes to test the dependencies
-    @app.get("/custom-user")
-    def custom_user_route(user: User = Depends(get_current_user(auth))):
+    # Custom Dependency Routes (User / Session extraction)
+    @fastapi_app.get("/custom-user")
+    def custom_user_route(user: User = Depends(get_current_user(auth_mock))):
         return {"user_id": user.id}
 
-    @app.get("/custom-session")
+    @fastapi_app.get("/custom-session")
     def custom_session_route(
-        session: Session = Depends(get_current_session(auth)),
+        session: Session = Depends(get_current_session(auth_mock)),
     ):
         return {"session_token": session.token}
 
-    client = TestClient(app)
+    return fastapi_app
 
-    # ---------------------------------------------------------
-    # PART A: Test Valid Session
-    # ---------------------------------------------------------
-    auth.get_session_from_cookies.return_value = (dummy_session, dummy_user)
 
-    # 1. GET /session (The universal frontend SDK route)
-    res_session = client.get("/session")
-    assert res_session.status_code == 200
-    data = res_session.json()
-    assert data["user"]["id"] == dummy_user.id
-    assert data["session"]["token"] == dummy_session.token
+@pytest.fixture
+def client(app):
+    return TestClient(app)
 
-    # 2. Custom User Dependency
-    res_custom_user = client.get("/custom-user")
-    assert res_custom_user.status_code == 200
-    assert res_custom_user.json()["user_id"] == dummy_user.id
 
-    # 3. Custom Session Dependency
-    res_custom_session = client.get("/custom-session")
-    assert res_custom_session.status_code == 200
-    assert res_custom_session.json()["session_token"] == dummy_session.token
+class TestFastAPIAuthEndpoints:
+    SIGN_UP_DATA = {
+        "email": "a@b.c",
+        "password": "p",
+        "password_confirmation": "p",
+        "username": "u",
+        "name": "n",
+    }
 
-    # ---------------------------------------------------------
-    # PART B: Test Invalid / Missing Session
-    # ---------------------------------------------------------
-    auth.get_session_from_cookies.return_value = None
+    def test_sign_up(self, client, auth_mock, dummy_user):
+        auth_mock.sign_up.return_value = dummy_user
+        res = client.post(
+            "/sign-up",
+            json=self.SIGN_UP_DATA,
+        )
+        assert res.status_code == 200
 
-    # All should return 401 Unauthorized
-    assert client.get("/session").status_code == 401
-    assert client.get("/custom-user").status_code == 401
-    assert client.get("/custom-session").status_code == 401
+        auth_mock.sign_up.side_effect = QulfException("Bad Data")
+        res = client.post("/sign-up", json={})
+        assert res.status_code == 422
+
+    def test_sign_in(self, client, auth_mock, dummy_session):
+        auth_mock.sign_in.return_value = dummy_session
+        res = client.post("/sign-in", json={"email": "a@b.c", "password": "p"})
+        assert res.status_code == 200
+        assert "set-cookie" in res.headers
+
+        auth_mock.sign_in.side_effect = QulfException("Invalid credentials")
+        res = client.post("/sign-in", json={"email": "a@b.c", "password": "bad"})
+        assert res.status_code == 400
+
+    def test_sign_out(self, client, auth_mock):
+        client.cookies.set(auth_mock.config.cookies.name, "valid_token")
+        res = client.post("/sign-out")
+        assert res.status_code == 200
+
+        client.cookies.clear()
+        res = client.post("/sign-out")
+        assert res.status_code == 200
+
+    def test_change_password(self, client, auth_mock, dummy_session, dummy_user):
+        auth_mock.validate_session.return_value = (dummy_session, dummy_user)
+        client.cookies.set(auth_mock.config.cookies.name, "valid_token")
+        res = client.post(
+            "/change-password", json={"old_password": "o", "new_password": "n"}
+        )
+        assert res.status_code == 200
+
+        # Token exists in request, but validate_session returns None
+        auth_mock.validate_session.return_value = None
+        res = client.post(
+            "/change-password", json={"old_password": "o", "new_password": "n"}
+        )
+        assert res.status_code == 401
+
+        # Test with NO token at all
+        client.cookies.clear()
+        res = client.post(
+            "/change-password", json={"old_password": "o", "new_password": "n"}
+        )
+        assert res.status_code == 401
+
+    def test_forgot_password(self, client, auth_mock):
+        auth_mock.generate_password_reset_token.return_value = None
+        res = client.post("/forgot-password", json={"email": "a@b.c"})
+        assert res.status_code == 200
+
+        auth_mock.generate_password_reset_token.side_effect = QulfException("Error")
+        res = client.post("/forgot-password", json={"email": "a@b.c"})
+        assert res.status_code == 400
+
+    def test_reset_password(self, client, auth_mock):
+        auth_mock.reset_password.return_value = None
+        res = client.post("/reset-password", json={"token": "tok", "new_password": "p"})
+        assert res.status_code == 200
+
+        auth_mock.reset_password.side_effect = QulfException("Error")
+        res = client.post("/reset-password", json={"token": "tok", "new_password": "p"})
+        assert res.status_code == 400
+
+    def test_verify_email(self, client, auth_mock):
+        auth_mock.verify_email.return_value = None
+        res = client.post("/verify-email", json={"token": "tok"})
+        assert res.status_code == 200
+
+        auth_mock.verify_email.side_effect = QulfException("Error")
+        res = client.post("/verify-email", json={"token": "tok"})
+        assert res.status_code == 400
+
+    def test_delete_account(self, client, auth_mock, dummy_session, dummy_user):
+        auth_mock.validate_session.return_value = (dummy_session, dummy_user)
+        client.cookies.set(auth_mock.config.cookies.name, "valid_token")
+        auth_mock.delete_account.return_value = None
+        res = client.delete("/delete-account")
+        assert res.status_code == 200
+
+        auth_mock.validate_session.return_value = None
+        res = client.delete("/delete-account")
+        assert res.status_code == 401
+
+    def test_sign_up_exception(self, client, auth_mock):
+        auth_mock.sign_up.side_effect = QulfException("Email already taken")
+        res = client.post(
+            "/sign-up",
+            json={
+                "email": "a@b.c",
+                "password": "p",
+                "password_confirmation": "p",
+                "username": "u",
+                "name": "n",
+            },
+        )
+        # Hits lines 84-85
+        assert res.status_code == 400
+        assert res.json()["detail"] == "Email already taken"
+
+    def test_authenticated_user_id_exception(self, client, auth_mock):
+        # Force validate_session to raise an exception instead of returning None
+        auth_mock.validate_session.side_effect = QulfException("Database offline")
+        client.cookies.set(auth_mock.config.cookies.name, "bad_token")
+
+        # Calling delete-account triggers _get_authenticated_user_id
+        res = client.delete("/delete-account")
+
+        # Hits line 78
+        assert res.status_code == 401
+        assert res.json()["detail"] == "Database offline"
+
+    def test_change_password_exception(
+        self, client, auth_mock, dummy_session, dummy_user
+    ):
+        auth_mock.validate_session.return_value = (dummy_session, dummy_user)
+        client.cookies.set(auth_mock.config.cookies.name, "valid_token")
+
+        # Core engine throws an error (e.g. wrong old password)
+        auth_mock.change_password.side_effect = QulfException("Wrong password")
+        res = client.post(
+            "/change-password", json={"old_password": "bad", "new_password": "n"}
+        )
+
+        # Hits lines 165-166
+        assert res.status_code == 400
+        assert res.json()["detail"] == "Wrong password"
+
+    def test_delete_account_exception(
+        self, client, auth_mock, dummy_session, dummy_user
+    ):
+        auth_mock.validate_session.return_value = (dummy_session, dummy_user)
+        client.cookies.set(auth_mock.config.cookies.name, "valid_token")
+
+        # Core engine throws an error
+        auth_mock.delete_account.side_effect = QulfException("Cannot delete admin")
+        res = client.delete("/delete-account")
+
+        # Hits lines 173-174
+        assert res.status_code == 400
+        assert res.json()["detail"] == "Cannot delete admin"
+
+
+class TestFastAPISessionRoute:
+    def test_get_session(self, client, auth_mock, dummy_user, dummy_session):
+        client.cookies.set(auth_mock.config.cookies.name, "valid_token")
+
+        # 1. Valid Session
+        auth_mock.get_session_from_cookies.return_value = (dummy_session, dummy_user)
+        res = client.get("/session")
+        assert res.status_code == 200
+        assert res.json()["user"]["id"] == dummy_user.id
+
+        # 2. Invalid Session
+        auth_mock.get_session_from_cookies.return_value = None
+        res = client.get("/session")
+        assert res.status_code == 401
+
+
+class TestFastAPIPlugins:
+    def test_plugin_headers_and_cookies(self, client, auth_mock):
+        res = client.post("/plugin-complex", json={"dummy": "data"})
+        assert res.status_code == 201
+        assert res.headers.get("x-custom-header") == "qulf-rocks"
+        assert "set-cookie" in res.headers
+
+    def test_plugin_invalid_json_body(self, client):
+        # Hits the silent exception catch during `request.json()` logic in plugins
+        res = client.put(
+            "/plugin-complex",
+            content="this-is-not-valid-json",
+            headers={"Content-Type": "application/json"},
+        )
+        assert res.status_code == 201
+
+    def test_plugin_rbac(self, client, auth_mock, dummy_user):
+        # Missing session
+        auth_mock.get_session_from_cookies.return_value = None
+        assert client.get("/plugin-role").status_code == 401
+        assert client.get("/plugin-perm").status_code == 401
+
+        # Authorized
+        auth_mock.get_session_from_cookies.return_value = ("fake_session", dummy_user)
+        auth_mock.has_role.return_value = True
+        auth_mock.has_permission.return_value = True
+        assert client.get("/plugin-role").status_code == 200
+        assert client.get("/plugin-perm").status_code == 200
+
+        # Unauthorized
+        auth_mock.has_role.return_value = False
+        auth_mock.has_permission.return_value = False
+        assert client.get("/plugin-role").status_code == 403
+        assert client.get("/plugin-perm").status_code == 403
+
+
+class TestFastAPIDecoratorsAndDependencies:
+    def test_rbac_dependencies_all(self, client, auth_mock, dummy_user):
+        client.cookies.set(auth_mock.config.cookies.name, "valid_token")
+        auth_mock.get_session_from_cookies.return_value = ("fake_session", dummy_user)
+
+        # Test Roles All
+        auth_mock.has_role.side_effect = lambda user, role: True
+        assert client.get("/dep-roles-all").status_code == 200
+        auth_mock.has_role.side_effect = lambda user, role: role == "admin"
+        assert client.get("/dep-roles-all").status_code == 403
+
+        # Test Perms All
+        auth_mock.has_permission.side_effect = lambda user, perm: True
+        assert client.get("/dep-perms-all").status_code == 200
+        auth_mock.has_permission.side_effect = lambda user, perm: perm == "read"
+        assert client.get("/dep-perms-all").status_code == 403
+
+    def test_rbac_dependencies_any(self, client, auth_mock, dummy_user):
+        client.cookies.set(auth_mock.config.cookies.name, "valid_token")
+        auth_mock.get_session_from_cookies.return_value = ("fake_session", dummy_user)
+
+        # Test Roles Any
+        auth_mock.has_role.side_effect = lambda user, role: role == "editor"
+        assert client.get("/dep-roles-any").status_code == 200
+        auth_mock.has_role.side_effect = lambda user, role: False
+        assert client.get("/dep-roles-any").status_code == 403
+
+        # Test Perms Any
+        auth_mock.has_permission.side_effect = lambda user, perm: perm == "write"
+        assert client.get("/dep-perms-any").status_code == 200
+        auth_mock.has_permission.side_effect = lambda user, perm: False
+        assert client.get("/dep-perms-any").status_code == 403
+
+    def test_dependencies_unauthenticated(self, client, auth_mock):
+        auth_mock.get_session_from_cookies.return_value = None
+        assert client.get("/dep-roles-all").status_code == 401
+        assert client.get("/dep-perms-all").status_code == 401
+        assert client.get("/custom-user").status_code == 401
+        assert client.get("/custom-session").status_code == 401
+
+    def test_current_user_and_session_dependencies(
+        self, client, auth_mock, dummy_user, dummy_session
+    ):
+        client.cookies.set(auth_mock.config.cookies.name, "valid_token")
+        auth_mock.get_session_from_cookies.return_value = (dummy_session, dummy_user)
+
+        res_user = client.get("/custom-user")
+        assert res_user.status_code == 200
+        assert res_user.json()["user_id"] == dummy_user.id
+
+        res_session = client.get("/custom-session")
+        assert res_session.status_code == 200
+        assert res_session.json()["session_token"] == dummy_session.token

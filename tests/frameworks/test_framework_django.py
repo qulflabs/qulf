@@ -1,645 +1,632 @@
 import json
-from unittest.mock import AsyncMock, MagicMock
+from typing import Any
+from unittest.mock import MagicMock
 
 import django
 import pytest
 from django.conf import settings
-from django.http import QueryDict
+from django.http import JsonResponse, QueryDict
 
-# Ensure Django settings are configured before importing any Django internals!
+# Ensure Django settings are configured before importing any Django internals.
 if not settings.configured:
     settings.configure(DEFAULT_CHARSET="utf-8")
     django.setup()
 
-from django.http import JsonResponse
 from django.test import RequestFactory
 
 from qulf import CookieOptions, HttpMethod, QulfRequest, QulfResponse, QulfRoute
-from qulf.core import Qulf
 from qulf.exceptions import QulfException
 from qulf.frameworks.django import (
     _get_client_ip,
     _get_user_agent,
+    get_current_session,
+    get_current_user,
     requires_permission,
     requires_role,
     serve_qulf,
 )
 
-
-# IP & User-Agent Helper Tests
-# Using DummyRequest ensures MagicMock doesn't trick hasattr()
-class DummyRequest:
-    pass
-
-
-def test_get_client_ip() -> None:
-    req1 = DummyRequest()
-    req1.headers = {"X-Forwarded-For": "192.168.1.1, 10.0.0.1"}
-    assert _get_client_ip(req1) == "192.168.1.1"
-
-    req2 = DummyRequest()
-    req2.META = {"HTTP_X_FORWARDED_FOR": "10.0.0.2"}
-    assert _get_client_ip(req2) == "10.0.0.2"
-
-    req3 = DummyRequest()
-    req3.META = {"REMOTE_ADDR": "127.0.0.1"}
-    assert _get_client_ip(req3) == "127.0.0.1"
-
-    req4 = DummyRequest()
-    assert _get_client_ip(req4) is None
-
-
-def test_get_user_agent() -> None:
-    req1 = DummyRequest()
-    req1.headers = {"User-Agent": "TestBrowser/1.0"}
-    assert _get_user_agent(req1) == "TestBrowser/1.0"
-
-    req2 = DummyRequest()
-    req2.META = {"HTTP_USER_AGENT": "LegacyBrowser/1.0"}
-    assert _get_user_agent(req2) == "LegacyBrowser/1.0"
-
-    req3 = DummyRequest()
-    assert _get_user_agent(req3) is None
-
-
-# View Translation Fixtures
-@pytest.fixture
-def rf() -> RequestFactory:
-    return RequestFactory()
-
-
-@pytest.fixture
-def mock_auth() -> MagicMock:
-    auth = MagicMock(spec=Qulf)
-
-    auth.config = MagicMock()
-    auth.config.cookies.name = "qulf_session"
-    auth.config.cookies.http_only = True
-    auth.config.cookies.secure = True
-    auth.config.cookies.same_site = "lax"
-
-    auth.sign_up = AsyncMock()
-    auth.sign_in = AsyncMock()
-    auth.sign_out = AsyncMock()
-    auth.plugins = {}
-    return auth
-
-
-# Sign-Up View Tests
-VALID_USER_PAYLOAD = {
+# ==========================================
+# REUSABLE TEST VARIABLES
+# ==========================================
+VALID_SIGN_UP_PAYLOAD = {
     "email": "test@test.com",
     "name": "Test User",
     "username": "testuser",
     "password": "pwd12345",
     "password_confirmation": "pwd12345",
 }
+VALID_SIGN_IN_PAYLOAD = {"email": "test@test.com", "password": "pwd12345"}
+VALID_CHANGE_PW_PAYLOAD = {"old_password": "o", "new_password": "p"}
+VALID_RESET_PW_PAYLOAD = {"token": "t", "new_password": "p"}
+VALID_FORGOT_PW_PAYLOAD = {"email": "a@a.com"}
+VALID_VERIFY_EMAIL_PAYLOAD = {"token": "t"}
+
+
+# ==========================================
+# FIXTURES
+# ==========================================
+@pytest.fixture
+def rf() -> RequestFactory:
+    return RequestFactory()
+
+
+@pytest.fixture
+def django_views(auth_mock: MagicMock) -> dict[str, Any]:
+    urlpatterns = serve_qulf(auth_mock)
+    return {
+        p.pattern._route: p.callback
+        for p in urlpatterns
+        if hasattr(p.pattern, "_route")
+    }
+
+
+class DummyRequest:
+    pass
+
+
+# TEST SUITES
+class TestDjangoHelpers:
+    def test_get_client_ip(self) -> None:
+        # Standard Forwarded
+        req1 = DummyRequest()
+        req1.headers = {"X-Forwarded-For": "192.168.1.1, 10.0.0.1"}
+        assert _get_client_ip(req1) == "192.168.1.1"
+
+        # Headers exist, but X-Forwarded-For is missing (Falls back to META)
+        req_no_xfwd = DummyRequest()
+        req_no_xfwd.headers = {"Other": "Value"}
+        req_no_xfwd.META = {"REMOTE_ADDR": "10.0.0.5"}
+        assert _get_client_ip(req_no_xfwd) == "10.0.0.5"
+
+        # Standard META HTTP_X_FORWARDED_FOR
+        req2 = DummyRequest()
+        req2.META = {"HTTP_X_FORWARDED_FOR": "10.0.0.2"}
+        assert _get_client_ip(req2) == "10.0.0.2"
+
+        # Empty string in META (Falls back to REMOTE_ADDR)
+        req_empty_xfwd = DummyRequest()
+        req_empty_xfwd.META = {
+            "HTTP_X_FORWARDED_FOR": "",
+            "REMOTE_ADDR": "192.168.1.200",
+        }
+        assert _get_client_ip(req_empty_xfwd) == "192.168.1.200"
+
+        # Invalid type in META (Falls back to REMOTE_ADDR)
+        req_bad_type = DummyRequest()
+        req_bad_type.META = {
+            "HTTP_X_FORWARDED_FOR": ["10.0.0.2"],
+            "REMOTE_ADDR": "192.168.1.100",
+        }
+        assert _get_client_ip(req_bad_type) == "192.168.1.100"
+
+        # No headers, empty META
+        req4 = DummyRequest()
+        req4.META = {}
+        assert _get_client_ip(req4) is None
+
+    def test_get_user_agent(self) -> None:
+        # Standard Header
+        req1 = DummyRequest()
+        req1.headers = {"User-Agent": "TestBrowser/1.0"}
+        assert _get_user_agent(req1) == "TestBrowser/1.0"
+
+        # Headers exist, but User-Agent is missing
+        req_no_ua = DummyRequest()
+        req_no_ua.headers = {"Other": "yes"}
+        assert _get_user_agent(req_no_ua) is None
+
+        # Standard META
+        req2 = DummyRequest()
+        req2.META = {"HTTP_USER_AGENT": "LegacyBrowser/1.0"}
+        assert _get_user_agent(req2) == "LegacyBrowser/1.0"
+
+        # No headers, empty META
+        req3 = DummyRequest()
+        req3.META = {}
+        assert _get_user_agent(req3) is None
+
+    def test_helpers_no_attributes_at_all(self) -> None:
+        bare_req = DummyRequest()
+
+        assert _get_client_ip(bare_req) is None
+        assert _get_user_agent(bare_req) is None
 
 
 @pytest.mark.asyncio
-async def test_sign_up_success(rf: RequestFactory, mock_auth: MagicMock) -> None:
-    mock_user = MagicMock()
-    mock_user.model_dump.return_value = {
-        "id": "123",
-        "email": "test@test.com",
-        "name": "Test User",
-    }
-    mock_auth.sign_up.return_value = mock_user
+class TestDjangoAuthEndpoints:
+    async def test_sign_up(
+        self,
+        rf: RequestFactory,
+        auth_mock: MagicMock,
+        dummy_user: MagicMock,
+        django_views: dict[str, Any],
+    ) -> None:
+        view = django_views["sign-up"]
 
-    urlpatterns = serve_qulf(mock_auth)
-    sign_up_view = urlpatterns[0].callback
-
-    request = rf.post(
-        "/sign-up",
-        data=json.dumps(VALID_USER_PAYLOAD),
-        content_type="application/json",
-    )
-    response = await sign_up_view(request)
-
-    assert response.status_code == 200
-    assert json.loads(response.content) == {
-        "id": "123",
-        "email": "test@test.com",
-        "name": "Test User",
-    }
-    mock_auth.sign_up.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_sign_up_sad_paths(rf: RequestFactory, mock_auth: MagicMock) -> None:
-    urlpatterns = serve_qulf(mock_auth)
-    sign_up_view = urlpatterns[0].callback
-
-    # Not a POST method
-    res1 = await sign_up_view(rf.get("/sign-up"))
-    assert res1.status_code == 405
-
-    # Invalid JSON
-    res2 = await sign_up_view(
-        rf.post("/sign-up", data="bad-json", content_type="application/json")
-    )
-    assert res2.status_code == 400
-
-    # ValidationError
-    invalid_payload = {
-        "email": "test@test.com",
-        "name": "Test User",
-        "username": "testuser",
-    }
-    res3 = await sign_up_view(
-        rf.post(
+        auth_mock.sign_up.return_value = dummy_user
+        req = rf.post(
             "/sign-up",
-            data=json.dumps(invalid_payload),
+            data=json.dumps(VALID_SIGN_UP_PAYLOAD),
             content_type="application/json",
         )
-    )
-    assert res3.status_code == 400
+        res = await view(req)
 
-    # QulfException thrown from core
-    mock_auth.sign_up.side_effect = QulfException("User already exists")
-    res4 = await sign_up_view(
-        rf.post(
-            "/sign-up",
-            data=json.dumps(VALID_USER_PAYLOAD),
-            content_type="application/json",
+        assert res.status_code == 200
+        assert json.loads(res.content)["id"] == "123"
+        assert (await view(rf.get("/sign-up"))).status_code == 405
+        assert (
+            await view(
+                rf.post("/sign-up", data="bad-json", content_type="application/json")
+            )
+        ).status_code == 400
+
+        auth_mock.sign_up.side_effect = QulfException("User already exists")
+        res_exc = await view(
+            rf.post(
+                "/sign-up",
+                data=json.dumps(VALID_SIGN_UP_PAYLOAD),
+                content_type="application/json",
+            )
         )
-    )
-    assert res4.status_code == 400
-    assert "User already exists" in json.loads(res4.content)["detail"]
+        assert res_exc.status_code == 400
+        assert "User already exists" in json.loads(res_exc.content)["detail"]
 
+    async def test_sign_in(
+        self,
+        rf: RequestFactory,
+        auth_mock: MagicMock,
+        dummy_session: MagicMock,
+        django_views: dict[str, Any],
+    ) -> None:
+        view = django_views["sign-in"]
 
-# Sign-In View Tests
-@pytest.mark.asyncio
-async def test_sign_in_success(rf: RequestFactory, mock_auth: MagicMock) -> None:
-    mock_session = MagicMock()
-    mock_session.token = "secure-jwt-token"
-    mock_auth.sign_in.return_value = mock_session
-
-    urlpatterns = serve_qulf(mock_auth)
-    sign_in_view = urlpatterns[1].callback
-
-    request = rf.post(
-        "/sign-in",
-        data=json.dumps({"email": "test@test.com", "password": "pwd"}),
-        content_type="application/json",
-    )
-    request.META["REMOTE_ADDR"] = "1.1.1.1"
-    request.META["HTTP_USER_AGENT"] = "TestAgent"
-
-    response = await sign_in_view(request)
-
-    assert response.status_code == 200
-    assert "qulf_session" in response.cookies
-    assert response.cookies["qulf_session"].value == "secure-jwt-token"
-    assert response.cookies["qulf_session"]["samesite"] == "Lax"
-
-
-@pytest.mark.asyncio
-async def test_sign_in_sad_paths(rf: RequestFactory, mock_auth: MagicMock) -> None:
-    urlpatterns = serve_qulf(mock_auth)
-    sign_in_view = urlpatterns[1].callback
-
-    res1 = await sign_in_view(rf.get("/sign-in"))
-    assert res1.status_code == 405
-
-    mock_auth.sign_in.side_effect = QulfException("Invalid credentials")
-    res2 = await sign_in_view(
-        rf.post(
+        auth_mock.sign_in.return_value = dummy_session
+        req = rf.post(
             "/sign-in",
-            data=json.dumps({"email": "test@test.com", "password": "wrong"}),
+            data=json.dumps(VALID_SIGN_IN_PAYLOAD),
             content_type="application/json",
         )
-    )
-    assert res2.status_code == 400
-    assert "Invalid credentials" in json.loads(res2.content)["detail"]
+        req.META["REMOTE_ADDR"] = "1.1.1.1"
+        req.META["HTTP_USER_AGENT"] = "TestAgent"
+
+        res = await view(req)
+        assert res.status_code == 200
+        assert "qulf_session" in res.cookies
+        assert res.cookies["qulf_session"].value == dummy_session.token
+
+        assert (await view(rf.get("/sign-in"))).status_code == 405
+
+        auth_mock.sign_in.side_effect = QulfException("Invalid credentials")
+        res_exc = await view(
+            rf.post(
+                "/sign-in",
+                data=json.dumps(VALID_SIGN_IN_PAYLOAD),
+                content_type="application/json",
+            )
+        )
+        assert res_exc.status_code == 400
+
+    async def test_sign_in_no_samesite(
+        self,
+        rf: RequestFactory,
+        auth_mock: MagicMock,
+        dummy_session: MagicMock,
+        django_views: dict[str, Any],
+    ) -> None:
+        auth_mock.config.cookies.same_site = None
+        auth_mock.sign_in.return_value = dummy_session
+        view = django_views["sign-in"]
+
+        req = rf.post(
+            "/sign-in",
+            data=json.dumps(VALID_SIGN_IN_PAYLOAD),
+            content_type="application/json",
+        )
+        res = await view(req)
+
+        assert res.status_code == 200
+        assert res.cookies["qulf_session"]["samesite"] == "Lax"
+
+    async def test_sign_out(
+        self, rf: RequestFactory, django_views: dict[str, Any]
+    ) -> None:
+        view = django_views["sign-out"]
+
+        assert (await view(rf.get("/sign-out"))).status_code == 405
+
+        req = rf.post("/sign-out")
+        req.COOKIES["qulf_session"] = "existing-token"
+        assert (await view(req)).status_code == 200
+
+        req_no_cookie = rf.post("/sign-out")
+        assert (await view(req_no_cookie)).status_code == 200
+
+    async def test_forgot_password(
+        self, rf: RequestFactory, django_views: dict[str, Any]
+    ) -> None:
+        view = django_views["forgot-password"]
+
+        req = rf.post(
+            "/forgot-password",
+            data=json.dumps(VALID_FORGOT_PW_PAYLOAD),
+            content_type="application/json",
+        )
+        assert (await view(req)).status_code == 200
+        assert (await view(rf.get("/forgot-password"))).status_code == 405
+
+        req_bad = rf.post(
+            "/forgot-password", data="bad-json", content_type="application/json"
+        )
+        assert (await view(req_bad)).status_code == 400
+
+    async def test_reset_password(
+        self, rf: RequestFactory, django_views: dict[str, Any]
+    ) -> None:
+        view = django_views["reset-password"]
+
+        req = rf.post(
+            "/reset-password",
+            data=json.dumps(VALID_RESET_PW_PAYLOAD),
+            content_type="application/json",
+        )
+        assert (await view(req)).status_code == 200
+        assert (await view(rf.get("/reset-password"))).status_code == 405
+
+    async def test_verify_email(
+        self, rf: RequestFactory, django_views: dict[str, Any]
+    ) -> None:
+        view = django_views["verify-email"]
+
+        req = rf.post(
+            "/verify-email",
+            data=json.dumps(VALID_VERIFY_EMAIL_PAYLOAD),
+            content_type="application/json",
+        )
+        assert (await view(req)).status_code == 200
+        assert (await view(rf.get("/verify-email"))).status_code == 405
+
+    async def test_change_password(
+        self, rf: RequestFactory, auth_mock: MagicMock, django_views: dict[str, Any]
+    ) -> None:
+        view = django_views["change-password"]
+
+        # Valid Request
+        req = rf.post(
+            "/change-password",
+            data=json.dumps(VALID_CHANGE_PW_PAYLOAD),
+            content_type="application/json",
+        )
+        req.COOKIES["qulf_session"] = "valid-token"
+        auth_mock.validate_session.return_value = (MagicMock(), MagicMock(id="user_1"))
+        assert (await view(req)).status_code == 200
+
+        # Method Not Allowed
+        assert (await view(rf.get("/change-password"))).status_code == 405
+
+        # Missing Token
+        req_missing = rf.post(
+            "/change-password",
+            data=json.dumps(VALID_CHANGE_PW_PAYLOAD),
+            content_type="application/json",
+        )
+        assert (await view(req_missing)).status_code == 401
+
+        # Invalid Token
+        req_invalid = rf.post(
+            "/change-password",
+            data=json.dumps(VALID_CHANGE_PW_PAYLOAD),
+            content_type="application/json",
+        )
+        req_invalid.COOKIES["qulf_session"] = "bad-token"
+        auth_mock.validate_session.return_value = None
+        assert (await view(req_invalid)).status_code == 401
+
+    async def test_delete_account(
+        self, rf: RequestFactory, auth_mock: MagicMock, django_views: dict[str, Any]
+    ) -> None:
+        view = django_views["delete-account"]
+
+        # Valid Request
+        req = rf.delete("/delete-account")
+        req.COOKIES["qulf_session"] = "valid-token"
+        auth_mock.validate_session.return_value = (MagicMock(), MagicMock(id="user_1"))
+        assert (await view(req)).status_code == 200
+
+        # Method Not Allowed
+        assert (await view(rf.post("/delete-account"))).status_code == 405
+
+        # Missing Token
+        req_missing = rf.delete("/delete-account")
+        assert (await view(req_missing)).status_code == 401
+
+        # Invalid Token
+        req_invalid = rf.delete("/delete-account")
+        req_invalid.COOKIES["qulf_session"] = "bad-token"
+        auth_mock.validate_session.return_value = None
+        assert (await view(req_invalid)).status_code == 401
+
+    async def test_django_core_exceptions(
+        self, rf: RequestFactory, auth_mock: MagicMock, django_views: dict[str, Any]
+    ) -> None:
+        auth_mock.reset_password.side_effect = QulfException("Core Reset Error")
+        auth_mock.verify_email.side_effect = QulfException("Core Verify Error")
+        auth_mock.change_password.side_effect = QulfException("Core Change Error")
+        auth_mock.delete_account.side_effect = QulfException("Core Delete Error")
+        auth_mock.validate_session.return_value = (MagicMock(), MagicMock(id="user1"))
+
+        req1 = rf.post(
+            "/reset-password",
+            data=json.dumps(VALID_RESET_PW_PAYLOAD),
+            content_type="application/json",
+        )
+        assert (await django_views["reset-password"](req1)).status_code == 400
+
+        req2 = rf.post(
+            "/verify-email",
+            data=json.dumps(VALID_VERIFY_EMAIL_PAYLOAD),
+            content_type="application/json",
+        )
+        assert (await django_views["verify-email"](req2)).status_code == 400
+
+        req3 = rf.post(
+            "/change-password",
+            data=json.dumps(VALID_CHANGE_PW_PAYLOAD),
+            content_type="application/json",
+        )
+        req3.COOKIES["qulf_session"] = "valid-token"
+        assert (await django_views["change-password"](req3)).status_code == 400
+
+        req4 = rf.delete("/delete-account")
+        req4.COOKIES["qulf_session"] = "valid-token"
+        assert (await django_views["delete-account"](req4)).status_code == 400
+
+    async def test_django_sign_up_sign_in_exceptions(
+        self, rf: RequestFactory, auth_mock: MagicMock, django_views: dict[str, Any]
+    ) -> None:
+        auth_mock.sign_up.side_effect = QulfException("Sign up error")
+        auth_mock.sign_in.side_effect = QulfException("Sign in error")
+
+        req1 = rf.post(
+            "/sign-up",
+            data=json.dumps(VALID_SIGN_UP_PAYLOAD),
+            content_type="application/json",
+        )
+        assert (await django_views["sign-up"](req1)).status_code == 400
+
+        req2 = rf.post(
+            "/sign-in",
+            data=json.dumps(VALID_SIGN_IN_PAYLOAD),
+            content_type="application/json",
+        )
+        assert (await django_views["sign-in"](req2)).status_code == 400
+
+        # Trigger ValidationError with incomplete dict payloads
+        req3 = rf.post(
+            "/sign-up",
+            data=json.dumps({"email": "incomplete"}),
+            content_type="application/json",
+        )
+        assert (await django_views["sign-up"](req3)).status_code == 400
+
+        req4 = rf.post(
+            "/sign-in",
+            data=json.dumps({"email": "incomplete"}),
+            content_type="application/json",
+        )
+        assert (await django_views["sign-in"](req4)).status_code == 400
 
 
-# Sign-Out View Tests
 @pytest.mark.asyncio
-async def test_sign_out(rf: RequestFactory, mock_auth: MagicMock) -> None:
-    urlpatterns = serve_qulf(mock_auth)
-    sign_out_view = urlpatterns[3].callback
+class TestDjangoPlugins:
+    async def test_plugin_dynamic_routing(
+        self, rf: RequestFactory, auth_mock: MagicMock
+    ) -> None:
+        async def dummy_handler(request: QulfRequest) -> QulfResponse:
+            return QulfResponse(
+                status_code=201,
+                body={"echo_body": request.body, "echo_query": request.query_params},
+                headers={"X-Custom-Header": "FrameworkAgnostic"},
+                set_cookies=[
+                    CookieOptions(key="plugin_cookie", value="abc", samesite="strict"),
+                    CookieOptions(key="plugin_cookie_2", value="xyz", samesite="none"),
+                ],
+                delete_cookies=["old_cookie"],
+            )
 
-    assert (await sign_out_view(rf.get("/sign-out"))).status_code == 405
+        mock_plugin = MagicMock()
+        mock_plugin.get_routes.return_value = [
+            QulfRoute(
+                path="/my-plugin", methods=[HttpMethod.POST], handler=dummy_handler
+            )
+        ]
+        auth_mock.plugins = {"dummy": mock_plugin}
 
-    req = rf.post("/sign-out")
-    req.COOKIES["qulf_session"] = "existing-token"
-    res = await sign_out_view(req)
-    assert res.status_code == 200
+        urlpatterns = serve_qulf(auth_mock)
+        plugin_view = urlpatterns[-1].callback
 
-    req2 = rf.post("/sign-out")
-    await sign_out_view(req2)
-
-
-# Generic Plugin Adapter Tests
-@pytest.mark.asyncio
-async def test_plugin_dynamic_routing(rf: RequestFactory, mock_auth: MagicMock) -> None:
-    async def dummy_handler(request: QulfRequest) -> QulfResponse:
-        return QulfResponse(
-            status_code=201,
-            body={"echo_body": request.body, "echo_query": request.query_params},
-            headers={"X-Custom-Header": "FrameworkAgnostic"},
-            set_cookies=[
-                CookieOptions(key="plugin_cookie", value="abc", samesite="strict")
-            ],
-            delete_cookies=["old_cookie"],
+        request = rf.post(
+            "/my-plugin?test=123",
+            data=json.dumps({"hello": "world"}),
+            content_type="application/json",
         )
 
-    mock_plugin = MagicMock()
-    mock_plugin.get_routes.return_value = [
-        QulfRoute(path="/my-plugin", methods=[HttpMethod.POST], handler=dummy_handler)
-    ]
-    mock_auth.plugins = {"dummy": mock_plugin}
+        qd = QueryDict(mutable=True)
+        qd.update({"test": "123"})
+        request.GET = qd
 
-    urlpatterns = serve_qulf(mock_auth)
-    plugin_view = urlpatterns[-1].callback
+        response = await plugin_view(request)
 
-    request = rf.post(
-        "/my-plugin?test=123",
-        data=json.dumps({"hello": "world"}),
-        content_type="application/json",
-    )
+        assert response.status_code == 201
 
-    qd = QueryDict(mutable=True)
-    qd.update({"test": "123"})
-    request.GET = qd
+        content = json.loads(response.content)
+        assert content["echo_body"] == {"hello": "world"}
+        assert content["echo_query"] == {"test": "123"}
+        assert response["X-Custom-Header"] == "FrameworkAgnostic"
+        assert "plugin_cookie" in response.cookies
+        assert "plugin_cookie_2" in response.cookies
 
-    response = await plugin_view(request)
-
-    assert response.status_code == 201
-
-    content = json.loads(response.content)
-    assert content["echo_body"] == {"hello": "world"}
-    assert content["echo_query"] == {"test": "123"}
-
-    assert response["X-Custom-Header"] == "FrameworkAgnostic"
-    assert "plugin_cookie" in response.cookies
-
-    # Test JSON parsing exception swallowing
-    req_bad_json = rf.post(
-        "/my-plugin", data="bad-json", content_type="application/json"
-    )
-    req_bad_json.GET = QueryDict()
-    res_bad = await plugin_view(req_bad_json)
-    assert res_bad.status_code == 201
-
-
-@pytest.mark.asyncio
-async def test_django_account_management_routes(
-    rf: RequestFactory, mock_auth: MagicMock
-) -> None:
-    urlpatterns = serve_qulf(mock_auth)
-    # test Django's new routes by mocking the POSTs
-    views = {
-        p.pattern._route: p.callback
-        for p in urlpatterns
-        if hasattr(p.pattern, "_route")
-    }
-
-    # 1. Happy Paths
-    req1 = rf.post(
-        "/forgot-password",
-        data=json.dumps({"email": "a@a.com"}),
-        content_type="application/json",
-    )
-    assert (await views["forgot-password"](req1)).status_code == 200
-
-    req2 = rf.post(
-        "/reset-password",
-        data=json.dumps({"token": "t", "new_password": "p"}),
-        content_type="application/json",
-    )
-    assert (await views["reset-password"](req2)).status_code == 200
-
-    req3 = rf.post(
-        "/verify-email",
-        data=json.dumps({"token": "t"}),
-        content_type="application/json",
-    )
-    assert (await views["verify-email"](req3)).status_code == 200
-
-    # Authenticated Happy Paths
-    req4 = rf.post(
-        "/change-password",
-        data=json.dumps({"old_password": "o", "new_password": "p"}),
-        content_type="application/json",
-    )
-    req4.COOKIES["qulf_session"] = "valid-token"
-    mock_auth.validate_session.return_value = (MagicMock(), MagicMock(id="user_1"))
-    assert (await views["change-password"](req4)).status_code == 200
-
-    req5 = rf.delete("/delete-account")
-    req5.COOKIES["qulf_session"] = "valid-token"
-    assert (await views["delete-account"](req5)).status_code == 200
-
-    # 2. Sad Paths
-    assert (
-        await views["forgot-password"](rf.get("/forgot-password"))
-    ).status_code == 405
-    assert (await views["reset-password"](rf.get("/reset-password"))).status_code == 405
-    assert (await views["verify-email"](rf.get("/verify-email"))).status_code == 405
-    assert (
-        await views["change-password"](rf.get("/change-password"))
-    ).status_code == 405
-    assert (
-        await views["delete-account"](rf.post("/delete-account"))
-    ).status_code == 405
-
-    # Sad path validation
-    req_bad = rf.post(
-        "/forgot-password", data="bad-json", content_type="application/json"
-    )
-    assert (await views["forgot-password"](req_bad)).status_code == 400
-
-
-@pytest.mark.asyncio
-async def test_django_core_exceptions(rf: RequestFactory, mock_auth: MagicMock):
-    mock_auth.reset_password.side_effect = QulfException("Core Reset Error")
-    mock_auth.verify_email.side_effect = QulfException("Core Verify Error")
-    mock_auth.change_password.side_effect = QulfException("Core Change Error")
-    mock_auth.delete_account.side_effect = QulfException("Core Delete Error")
-    mock_auth.validate_session.return_value = (MagicMock(), MagicMock(id="user1"))
-
-    urlpatterns = serve_qulf(mock_auth)
-    views = {
-        p.pattern._route: p.callback
-        for p in urlpatterns
-        if hasattr(p.pattern, "_route")
-    }
-    delete_view = next(
-        p.callback
-        for p in urlpatterns
-        if hasattr(p.pattern, "_route") and "account" in p.pattern._route
-    )
-
-    req1 = rf.post(
-        "/reset-password",
-        data=json.dumps({"token": "t", "new_password": "p"}),
-        content_type="application/json",
-    )
-    assert (await views["reset-password"](req1)).status_code == 400
-
-    req2 = rf.post(
-        "/verify-email",
-        data=json.dumps({"token": "t"}),
-        content_type="application/json",
-    )
-    assert (await views["verify-email"](req2)).status_code == 400
-
-    req3 = rf.post(
-        "/change-password",
-        data=json.dumps({"old_password": "o", "new_password": "p"}),
-        content_type="application/json",
-    )
-    req3.COOKIES["qulf_session"] = "valid-token"
-    assert (await views["change-password"](req3)).status_code == 400
-
-    req4 = rf.delete("/delete-account")
-    req4.COOKIES["qulf_session"] = "valid-token"
-    assert (await delete_view(req4)).status_code == 400
-
-
-@pytest.mark.asyncio
-async def test_django_sign_up_sign_in_exceptions(
-    rf: RequestFactory, mock_auth: MagicMock
-):
-    mock_auth.sign_up.side_effect = QulfException("Sign up error")
-    mock_auth.sign_in.side_effect = QulfException("Sign in error")
-
-    urlpatterns = serve_qulf(mock_auth)
-    views = {
-        p.pattern._route: p.callback
-        for p in urlpatterns
-        if hasattr(p.pattern, "_route")
-    }
-
-    req1 = rf.post(
-        "/sign-up",
-        data=json.dumps(
-            {
-                "name": "A",
-                "email": "a@a.com",
-                "username": "a",
-                "password": "p",
-                "password_confirmation": "p",
-            }
-        ),
-        content_type="application/json",
-    )
-    assert (await views["sign-up"](req1)).status_code == 400
-
-    req2 = rf.post(
-        "/sign-in",
-        data=json.dumps({"email": "a@a.com", "password": "p"}),
-        content_type="application/json",
-    )
-    assert (await views["sign-in"](req2)).status_code == 400
-
-
-@pytest.mark.asyncio
-async def test_plugin_dynamic_routing_rbac(
-    rf: RequestFactory, mock_auth: MagicMock
-) -> None:
-    async def dummy_handler(request: QulfRequest) -> QulfResponse:
-        return QulfResponse(status_code=200, body={"msg": "ok"})
-
-    mock_plugin = MagicMock()
-    mock_plugin.get_routes.return_value = [
-        QulfRoute(
-            path="/secure-plugin",
-            methods=[HttpMethod.GET],
-            handler=dummy_handler,
-            require_roles=["admin"],
-            require_permissions=["read_post"],
+        req_bad_json = rf.post(
+            "/my-plugin", data="bad-json", content_type="application/json"
         )
-    ]
-    mock_auth.plugins = {"dummy": mock_plugin}
-    urlpatterns = serve_qulf(mock_auth)
-    secure_view = urlpatterns[-1].callback
+        req_bad_json.GET = QueryDict()
+        res_bad = await plugin_view(req_bad_json)
+        assert res_bad.status_code == 201
 
-    req = rf.get("/secure-plugin")
+    async def test_plugin_dynamic_routing_rbac(
+        self, rf: RequestFactory, auth_mock: MagicMock, dummy_user: MagicMock
+    ) -> None:
+        async def dummy_handler(request: QulfRequest) -> QulfResponse:
+            return QulfResponse(status_code=200, body={"msg": "ok"})
 
-    # 1. Unauthenticated
-    mock_auth.get_session_from_cookies.return_value = None
-    res1 = await secure_view(req)
-    assert res1.status_code == 401
+        mock_plugin = MagicMock()
+        mock_plugin.get_routes.return_value = [
+            QulfRoute(
+                path="/secure-plugin",
+                methods=[HttpMethod.GET],
+                handler=dummy_handler,
+                require_roles=["admin"],
+                require_permissions=["read_post"],
+            )
+        ]
+        auth_mock.plugins = {"dummy": mock_plugin}
+        urlpatterns = serve_qulf(auth_mock)
+        secure_view = urlpatterns[-1].callback
 
-    # 2. Missing Role
-    req.COOKIES["qulf_session"] = "token"
-    mock_user = MagicMock()
-    mock_auth.get_session_from_cookies.return_value = (MagicMock(), mock_user)
-    mock_auth.has_role.return_value = False
-    res2 = await secure_view(req)
-    assert res2.status_code == 403
-    assert "role" in json.loads(res2.content)["detail"]
+        req = rf.get("/secure-plugin")
 
-    # 3. Missing Permission
-    mock_auth.has_role.return_value = True
-    mock_auth.has_permission.return_value = False
-    res3 = await secure_view(req)
-    assert res3.status_code == 403
-    assert "permission" in json.loads(res3.content)["detail"]
+        auth_mock.get_session_from_cookies.return_value = None
+        assert (await secure_view(req)).status_code == 401
 
-    # 4. Success
-    mock_auth.has_permission.return_value = True
-    res4 = await secure_view(req)
-    assert res4.status_code == 200
+        req.COOKIES["qulf_session"] = "token"
+        auth_mock.get_session_from_cookies.return_value = (MagicMock(), dummy_user)
+        auth_mock.has_role.return_value = False
+        res2 = await secure_view(req)
+        assert res2.status_code == 403
+        assert "role" in json.loads(res2.content)["detail"]
 
+        auth_mock.has_role.return_value = True
+        auth_mock.has_permission.return_value = False
+        res3 = await secure_view(req)
+        assert res3.status_code == 403
+        assert "permission" in json.loads(res3.content)["detail"]
 
-@pytest.mark.asyncio
-async def test_django_requires_role_decorator(rf: RequestFactory, mock_auth: MagicMock):
-    @requires_role(mock_auth, "admin")
-    async def admin_view(request):
-        return JsonResponse({"msg": "ok"})
-
-    @requires_role(mock_auth, ["admin", "editor"], mode="any")
-    async def any_role_view(request):
-        return JsonResponse({"msg": "ok"})
-
-    req = rf.get("/test")
-
-    # 1. Unauthenticated
-    mock_auth.get_session_from_cookies.return_value = None
-    assert (await admin_view(req)).status_code == 401
-
-    # 2. Mode ALL - Missing Role
-    req.COOKIES["qulf_session"] = "token"
-    mock_auth.get_session_from_cookies.return_value = (MagicMock(), MagicMock())
-    mock_auth.has_role.return_value = False
-    assert (await admin_view(req)).status_code == 403
-
-    # 3. Mode ALL - Success
-    mock_auth.has_role.return_value = True
-    assert (await admin_view(req)).status_code == 200
-
-    # 4. Mode ANY - Missing Role
-    mock_auth.has_role.side_effect = lambda user, role: False
-    assert (await any_role_view(req)).status_code == 403
-
-    # 5. Mode ANY - Success
-    mock_auth.has_role.side_effect = lambda user, role: role == "editor"
-    assert (await any_role_view(req)).status_code == 200
+        auth_mock.has_permission.return_value = True
+        assert (await secure_view(req)).status_code == 200
 
 
 @pytest.mark.asyncio
-async def test_django_requires_permission_decorator(
-    rf: RequestFactory, mock_auth: MagicMock
-):
-    @requires_permission(mock_auth, "delete_post")
-    async def delete_view(request):
-        return JsonResponse({"msg": "ok"})
+class TestDjangoDecoratorsAndDependencies:
+    async def test_requires_role_decorator(
+        self, rf: RequestFactory, auth_mock: MagicMock, dummy_user: MagicMock
+    ) -> None:
+        @requires_role(auth_mock, "admin")
+        async def admin_view(request):
+            return JsonResponse({"msg": "ok"})
 
-    @requires_permission(mock_auth, ["write_post", "edit_post"], mode="any")
-    async def any_perm_view(request):
-        return JsonResponse({"msg": "ok"})
+        @requires_role(auth_mock, ["admin", "editor"], mode="any")
+        async def any_role_view(request):
+            return JsonResponse({"msg": "ok"})
 
-    req = rf.get("/test")
+        req = rf.get("/test")
 
-    # Unauthenticated
-    mock_auth.get_session_from_cookies.return_value = None
-    assert (await delete_view(req)).status_code == 401
+        auth_mock.get_session_from_cookies.return_value = None
+        assert (await admin_view(req)).status_code == 401
 
-    # Mode = ALL - Missing Perm
-    req.COOKIES["qulf_session"] = "token"
-    mock_auth.get_session_from_cookies.return_value = (MagicMock(), MagicMock())
-    mock_auth.has_permission.return_value = False
-    assert (await delete_view(req)).status_code == 403
+        req.COOKIES["qulf_session"] = "token"
+        auth_mock.get_session_from_cookies.return_value = (MagicMock(), dummy_user)
+        auth_mock.has_role.return_value = False
+        assert (await admin_view(req)).status_code == 403
 
-    # Mode = ALL - Success
-    mock_auth.has_permission.return_value = True
-    assert (await delete_view(req)).status_code == 200
+        auth_mock.has_role.return_value = True
+        assert (await admin_view(req)).status_code == 200
 
-    # Mode = ANY - Missing Perm
-    mock_auth.has_permission.side_effect = lambda user, perm: False
-    assert (await any_perm_view(req)).status_code == 403
+        auth_mock.has_role.side_effect = lambda user, role: False
+        assert (await any_role_view(req)).status_code == 403
 
-    # Mode = ANY - Success
-    mock_auth.has_permission.side_effect = lambda user, perm: perm == "edit_post"
-    assert (await any_perm_view(req)).status_code == 200
+        auth_mock.has_role.side_effect = lambda user, role: role == "editor"
+        assert (await any_role_view(req)).status_code == 200
+
+    async def test_requires_permission_decorator(
+        self, rf: RequestFactory, auth_mock: MagicMock, dummy_user: MagicMock
+    ) -> None:
+        @requires_permission(auth_mock, "delete_post")
+        async def delete_view(request):
+            return JsonResponse({"msg": "ok"})
+
+        @requires_permission(auth_mock, ["write_post", "edit_post"], mode="any")
+        async def any_perm_view(request):
+            return JsonResponse({"msg": "ok"})
+
+        req = rf.get("/test")
+
+        auth_mock.get_session_from_cookies.return_value = None
+        assert (await delete_view(req)).status_code == 401
+
+        req.COOKIES["qulf_session"] = "token"
+        auth_mock.get_session_from_cookies.return_value = (MagicMock(), dummy_user)
+        auth_mock.has_permission.return_value = False
+        assert (await delete_view(req)).status_code == 403
+
+        auth_mock.has_permission.return_value = True
+        assert (await delete_view(req)).status_code == 200
+
+        auth_mock.has_permission.side_effect = lambda user, perm: False
+        assert (await any_perm_view(req)).status_code == 403
+
+        auth_mock.has_permission.side_effect = lambda user, perm: perm == "edit_post"
+        assert (await any_perm_view(req)).status_code == 200
+
+    async def test_current_user_and_session_dependencies(
+        self,
+        rf: RequestFactory,
+        auth_mock: MagicMock,
+        dummy_user: MagicMock,
+        dummy_session: MagicMock,
+    ) -> None:
+        req = rf.get("/test")
+        req.COOKIES["qulf_session"] = "valid"
+
+        auth_mock.get_session_from_cookies.return_value = (dummy_session, dummy_user)
+        user_dep = get_current_user(auth_mock)
+        user = await user_dep(req)
+        assert user.id == dummy_user.id
+
+        session_dep = get_current_session(auth_mock)
+        session = await session_dep(req)
+        assert session.token == dummy_session.token
+
+        auth_mock.get_session_from_cookies.return_value = None
+        with pytest.raises(QulfException, match="Unauthorized"):
+            await user_dep(req)
+        with pytest.raises(QulfException, match="Unauthorized"):
+            await session_dep(req)
 
 
 @pytest.mark.asyncio
-async def test_django_current_user_and_session(mock_auth: MagicMock):
-    import json
-    from datetime import datetime, timezone
-    from unittest.mock import AsyncMock
+class TestDjangoSessionRoute:
+    async def test_get_session_route(
+        self,
+        rf: RequestFactory,
+        auth_mock: MagicMock,
+        dummy_user: MagicMock,
+        dummy_session: MagicMock,
+        django_views: dict[str, Any],
+    ) -> None:
+        view = django_views["session"]
 
-    import pytest
-    from django.http import HttpRequest
+        req = rf.get("/session")
+        req.COOKIES["qulf_session"] = "valid"
 
-    from qulf.config import QulfConfig
-    from qulf.exceptions import QulfException
-    from qulf.frameworks.django import (
-        get_current_session,
-        get_current_user,
-        serve_qulf,
-    )
-    from qulf.types import Session, User
+        auth_mock.get_session_from_cookies.return_value = (dummy_session, dummy_user)
+        res = await view(req)
+        assert res.status_code == 200
+        assert json.loads(res.content)["user"]["id"] == dummy_user.id
 
-    mock_auth.config = QulfConfig(secret_key="test_secret_key_needs_to_be_long_enough")
-    mock_auth.get_session_from_cookies = AsyncMock()
-    mock_auth.plugins = {}
+        auth_mock.get_session_from_cookies.return_value = None
+        res2 = await view(req)
+        assert res2.status_code == 401
 
-    dummy_user = User(
-        id="123",
-        email="test@example.com",
-        name="Test User",
-        username="testuser",
-        created_at=datetime.now(timezone.utc),
-    )
-    dummy_session = Session(
-        id="sid_123",
-        token="valid_token",
-        user_id="123",
-        expires_at=datetime.now(timezone.utc),
-        created_at=datetime.now(timezone.utc),
-    )
-
-    request = HttpRequest()
-    request.method = "GET"
-    request.COOKIES = {"qulf_token": "valid"}
-
-    # ---------------------------------------------------------
-    # PART A: Test Dependencies (get_current_user / session)
-    # ---------------------------------------------------------
-
-    # Valid Session
-    mock_auth.get_session_from_cookies.return_value = (dummy_session, dummy_user)
-    user_dep = get_current_user(mock_auth)
-    user = await user_dep(request)
-    assert user.id == dummy_user.id
-
-    session_dep = get_current_session(mock_auth)
-    session = await session_dep(request)
-    assert session.token == dummy_session.token
-
-    # Invalid Session -> Raises QulfException
-    mock_auth.get_session_from_cookies.return_value = None
-    with pytest.raises(QulfException, match="Unauthorized"):
-        await user_dep(request)
-    with pytest.raises(QulfException, match="Unauthorized"):
-        await session_dep(request)
-
-    # ---------------------------------------------------------
-    # PART B: Test GET /session Route
-    # ---------------------------------------------------------
-    urls = serve_qulf(mock_auth)
-    # Extract the get_session view from urlpatterns
-    get_session_view = next(p.callback for p in urls if p.name == "get-session")
-
-    # 1. Valid route
-    mock_auth.get_session_from_cookies.return_value = (dummy_session, dummy_user)
-    res = await get_session_view(request)
-    assert res.status_code == 200
-    data = json.loads(res.content)
-    assert data["user"]["id"] == dummy_user.id
-
-    # 2. Invalid session (No token or invalid)
-    mock_auth.get_session_from_cookies.return_value = None
-    res = await get_session_view(request)
-    assert res.status_code == 401
-
-    # 3. Wrong HTTP Method
-    bad_req = HttpRequest()
-    bad_req.method = "POST"
-    res = await get_session_view(bad_req)
-    assert res.status_code == 405
+        bad_req = rf.post("/session")
+        res3 = await view(bad_req)
+        assert res3.status_code == 405

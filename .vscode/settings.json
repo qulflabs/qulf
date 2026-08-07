@@ -1,12 +1,17 @@
 {
     "cSpell.words": [
         "bento",
+        "litestar",
+        "mongomock",
         "ondelete",
         "passwordless",
         "Qulf",
+        "respx",
         "sessionmaker",
         "statelessly",
-        "totp"
+        "totp",
+        "USERINFO",
+        "webauthn"
     ],
     "biome.enabled": true,
     "editor.codeActionsOnSave": {

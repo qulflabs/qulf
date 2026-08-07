@@ -36,7 +36,6 @@ def _get_client_ip(request: HttpRequest) -> str | None:
             if forwarded := value:
                 return forwarded.split(",")[0].strip()
         return request.META.get("REMOTE_ADDR")
-
     return None
 
 

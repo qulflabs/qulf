@@ -219,6 +219,8 @@ def serve_qulf(auth: Qulf) -> APIRouter:
                         try:
                             body = await request.json()
                         except Exception:
+                            # delegate validation to the Plugin layer
+                            # and prevent unhandled 500 Server Errors.
                             pass
 
                     qulf_request = QulfRequest(

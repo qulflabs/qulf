@@ -275,6 +275,8 @@ def serve_qulf(auth: Qulf) -> list[Any]:
                         try:
                             body = json.loads(request.body)
                         except Exception:
+                            # delegate validation to the Plugin layer
+                            # and prevent unhandled 500 Server Errors.
                             pass
 
                     qulf_request = QulfRequest(

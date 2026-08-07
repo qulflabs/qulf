@@ -229,6 +229,8 @@ def serve_qulf(auth: Qulf) -> Router:
                         try:
                             body = await request.json()
                         except Exception:
+                            # delegate validation to the Plugin layer
+                            # and prevent unhandled 500 Server Errors.
                             pass
 
                     # Litestar Request -> QulfRequest

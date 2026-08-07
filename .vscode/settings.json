@@ -1,10 +1,14 @@
 {
     "cSpell.words": [
         "bento",
+        "Fumadocs",
         "litestar",
         "mongomock",
+        "mypy",
         "ondelete",
         "passwordless",
+        "Pydantic",
+        "pytest",
         "Qulf",
         "respx",
         "sessionmaker",

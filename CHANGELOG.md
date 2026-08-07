@@ -26,7 +26,6 @@
 ### Feat
 
 - **auth**: implemented PasskeyPlugin for WebAuthn support managing registration and authentication
-- **auth**: implemented PasskeyPlugin for WebAuthn support managing registration and authentication
 
 ## v0.1.0b5 (2026-08-01)
 

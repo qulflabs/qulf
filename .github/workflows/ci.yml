@@ -84,7 +84,7 @@ jobs:
             -o junit_family=legacy
 
       - name: Upload coverage to Codecov
-        if: matrix.python-version == '3.14'
+        if: matrix.python-version == '3.14' && github.actor != 'dependabot[bot]'
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -93,7 +93,7 @@ jobs:
           fail_ci_if_error: true
 
       - name: Upload test results to Codecov
-        if: ${{ !cancelled() && matrix.python-version == '3.14' }}
+        if: ${{ !cancelled() && matrix.python-version == '3.14' && github.actor != 'dependabot[bot]' }}
         uses: codecov/codecov-action@v5
 
         with:

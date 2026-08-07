@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock
 
 import jwt
 import pytest
@@ -182,3 +183,62 @@ class TestCoreAccountManagement:
             QulfException, match="User not found or account deactivated"
         ):
             await auth.change_password(str(user.id), "password123", "new")
+
+    async def test_generate_password_reset_nonexistent_user(self, auth: Qulf) -> None:
+        with pytest.raises(
+            QulfException, match="If the email exists, a reset link will be sent."
+        ):
+            await auth.generate_password_reset_token("nobody@example.com")
+
+    async def test_reset_password_malformed_and_expired(self, auth: Qulf) -> None:
+        with pytest.raises(QulfException, match="Invalid token"):
+            await auth.reset_password("this.is.not.a.valid.jwt", "new_pass")
+
+        expired_payload = {
+            "sub": "some-id",
+            "action": "reset_password",
+            "exp": datetime.now(timezone.utc) - timedelta(minutes=15),
+        }
+        expired_token = jwt.encode(
+            expired_payload, auth.config.secret_key, algorithm="HS256"
+        )
+
+        with pytest.raises(QulfException, match="Token expired"):
+            await auth.reset_password(expired_token, "new_pass")
+
+    async def test_verify_email_invalid_and_expired_tokens(self, auth: Qulf) -> None:
+        with pytest.raises(QulfException, match="Invalid token"):
+            await auth.verify_email("this.is.not.a.valid.jwt")
+
+        expired_payload = {
+            "sub": "some-id",
+            "action": "verify_email",
+            "exp": datetime.now(timezone.utc) - timedelta(minutes=15),
+        }
+        expired_token = jwt.encode(
+            expired_payload, auth.config.secret_key, algorithm="HS256"
+        )
+
+        with pytest.raises(QulfException, match="Token expired"):
+            await auth.verify_email(expired_token)
+
+    async def test_email_verification_hook_called(self, memory_db) -> None:
+
+        mock_send_verification = AsyncMock()
+        config = QulfConfig(
+            email_hooks=EmailHooks(send_verification=mock_send_verification),
+        )
+        auth = Qulf(db=memory_db, config=config)
+
+        await auth.sign_up(
+            UserCreate(
+                name="Hook Test",
+                email="hook@test.com",
+                username="hookuser",
+                password="password123",
+                password_confirmation="password123",
+            )
+        )
+
+        await auth.generate_email_verification_token("hook@test.com")
+        mock_send_verification.assert_called_once()

@@ -141,20 +141,26 @@ class TestLitestarAuthEndpoints:
         dummy_session: Session,
         dummy_user: User,
     ):
-        # Valid Session
+        # 1. Valid Session (Hits the `if validated_session:` block)
         auth_mock.validate_session.return_value = (dummy_session, dummy_user)
         client.cookies.set(auth_mock.config.cookies.name, "valid_token")
         res = client.post("/change-password", json=VALID_CHANGE_PW_PAYLOAD)
         assert res.status_code == 200
 
-        # Exception from Core Engine
+        # 2. Exception from Core Engine
         auth_mock.change_password.side_effect = QulfException("Wrong old password")
         res = client.post("/change-password", json=VALID_CHANGE_PW_PAYLOAD)
         assert res.status_code == 400
+        auth_mock.change_password.side_effect = None
 
-        # Invalid Session
-        auth_mock.validate_session.return_value = None
+        # 3. Invalid Session - Missing Token (Hits `if not token:` block)
         client.cookies.clear()
+        res = client.post("/change-password", json=VALID_CHANGE_PW_PAYLOAD)
+        assert res.status_code == 401
+
+        # 4. Invalid Session - Bad Token (Hits the final `raise QulfException` block)
+        client.cookies.set(auth_mock.config.cookies.name, "bad_token")
+        auth_mock.validate_session.return_value = None
         res = client.post("/change-password", json=VALID_CHANGE_PW_PAYLOAD)
         assert res.status_code == 401
 
@@ -192,21 +198,23 @@ class TestLitestarAuthEndpoints:
         dummy_session: Session,
         dummy_user: User,
     ):
-        # Valid Session
         auth_mock.validate_session.return_value = (dummy_session, dummy_user)
         client.cookies.set(auth_mock.config.cookies.name, "valid_token")
         auth_mock.delete_account.return_value = None
         res = client.delete("/delete-account")
         assert res.status_code == 200
 
-        # Exception from Core Engine
         auth_mock.delete_account.side_effect = QulfException("Cannot delete admin")
         res = client.delete("/delete-account")
         assert res.status_code == 400
+        auth_mock.delete_account.side_effect = None
 
-        # Invalid Session
-        auth_mock.validate_session.return_value = None
         client.cookies.clear()
+        res = client.delete("/delete-account")
+        assert res.status_code == 401
+
+        client.cookies.set(auth_mock.config.cookies.name, "bad_token")
+        auth_mock.validate_session.return_value = None
         res = client.delete("/delete-account")
         assert res.status_code == 401
 

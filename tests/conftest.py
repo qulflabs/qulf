@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import pytest_asyncio
@@ -8,6 +9,8 @@ from qulf.adapters.base import DatabaseAdapter
 from qulf.adapters.sqlalchemy import QulfBase, SQLAlchemyAdapter
 from qulf.config import DeletionStrategy, QulfConfig
 from qulf.core import Qulf
+from qulf.plugins.base import QulfPlugin
+from qulf.routing import CookieOptions, HttpMethod, QulfRequest, QulfResponse, QulfRoute
 from qulf.types import (
     Account,
     AccountCreate,
@@ -285,3 +288,93 @@ async def motor_adapter():
     db = client["qulf_test"]
     yield MotorAdapter(db)
     client.close()
+
+
+@pytest.fixture
+def dummy_user():
+    return User(
+        id="123",
+        email="test@example.com",
+        name="Test User",
+        username="testuser",
+        created_at=datetime.now(timezone.utc),
+    )
+
+
+@pytest.fixture
+def dummy_session():
+    return Session(
+        id="123",
+        token="test_token",
+        user_id="123",
+        expires_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
+    )
+
+
+@pytest.fixture
+def auth_mock(dummy_user, dummy_session):
+    """A completely mocked Qulf engine for testing framework wrappers and routing."""
+    auth = MagicMock(spec=Qulf)
+    auth.config = QulfConfig(secret_key="test_secret_key_needs_to_be_long_enough")
+    auth._get_authenticated_user_id = AsyncMock()
+    auth.sign_up = AsyncMock()
+    auth.sign_in = AsyncMock()
+    auth.sign_out = AsyncMock()
+    auth.validate_session = AsyncMock()
+    auth.generate_password_reset_token = AsyncMock()
+    auth.reset_password = AsyncMock()
+    auth.verify_email = AsyncMock()
+    auth.change_password = AsyncMock()
+    auth.delete_account = AsyncMock()
+    auth.revoke_all_user_sessions = AsyncMock()
+    auth.get_session_from_cookies = AsyncMock()
+    auth.has_role = AsyncMock()
+    auth.has_permission = AsyncMock()
+
+    class MockRBACPlugin(QulfPlugin):
+        name = "mock_rbac"
+
+        def get_routes(self) -> list[QulfRoute]:
+            async def handler(req: QulfRequest) -> QulfResponse:
+                return QulfResponse(status_code=200, body={"ok": True})
+
+            async def complex_handler(req: QulfRequest) -> QulfResponse:
+                return QulfResponse(
+                    status_code=201,
+                    body={"complex": True},
+                    headers={"X-Custom-Header": "qulf-rocks"},
+                    set_cookies=[
+                        CookieOptions(
+                            key="new_cookie",
+                            value="val",
+                            httponly=True,
+                            secure=True,
+                            samesite="strict",
+                        )
+                    ],
+                    delete_cookies=["old_cookie"],
+                )
+
+            return [
+                QulfRoute(
+                    path="/plugin-role",
+                    methods=[HttpMethod.GET],
+                    handler=handler,
+                    require_roles=["admin"],
+                ),
+                QulfRoute(
+                    path="/plugin-perm",
+                    methods=[HttpMethod.GET],
+                    handler=handler,
+                    require_permissions=["write:docs"],
+                ),
+                QulfRoute(
+                    path="/plugin-complex",
+                    methods=[HttpMethod.POST, HttpMethod.PUT],
+                    handler=complex_handler,
+                ),
+            ]
+
+    auth.plugins = {"mock": MockRBACPlugin()}
+    return auth

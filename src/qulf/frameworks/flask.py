@@ -62,7 +62,8 @@ def serve_qulf(auth: Qulf) -> Blueprint:
             user = await auth.sign_up(user_data)
             return jsonify(user.model_dump())
         except (ValueError, ValidationError, QulfException) as e:
-            return jsonify({"detail": str(e)}), 400
+            status_code = 401 if str(e) == "Unauthorized" else 400
+            return jsonify({"detail": str(e)}), status_code
 
     @bp.route("/sign-in", methods=["POST"])
     async def sign_in() -> Any:

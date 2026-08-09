@@ -190,7 +190,7 @@ class MotorAdapter(DatabaseAdapter):
 
     async def delete_session(self, token: str) -> bool:
         result = await self.sessions.delete_one({"token": token})
-        return bool(result.deleted_count > 0)
+        return result.deleted_count > 0
 
     async def get_user_sessions(self, user_id: str | int) -> list[QulfSessionType]:
         cursor = self.sessions.find({"user_id": str(user_id)})
@@ -203,7 +203,7 @@ class MotorAdapter(DatabaseAdapter):
         result = await self.sessions.delete_one(
             {"user_id": str(user_id), "token": token}
         )
-        return bool(result.deleted_count > 0)
+        return result.deleted_count > 0
 
     async def delete_all_user_sessions(
         self, user_id: str | int, except_token: str | None = None

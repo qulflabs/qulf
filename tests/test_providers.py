@@ -73,7 +73,7 @@ class TestOAuthBaseAndModels:
         assert token.expires_in is None
 
         with pytest.raises(ValidationError):
-            OAuthTokenResponse(access_token="abc")
+            OAuthTokenResponse.model_validate({"access_token": "abc"})
 
 
 @pytest.mark.asyncio

@@ -70,9 +70,9 @@ class MemoryAdapter(DatabaseAdapter):
         return User.model_validate(user, from_attributes=True)
 
     async def delete_user(self, user_id: str, strategy: DeletionStrategy) -> None:
-        user = self.users.get(str(user_id))
+        user = self.users.get(user_id)
         if strategy == DeletionStrategy.HARD:
-            self.users.pop(str(user_id))
+            self.users.pop(user_id)
         else:
             setattr(user, "deleted_at", datetime.now(timezone.utc))
 

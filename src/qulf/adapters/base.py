@@ -72,7 +72,7 @@ class DatabaseAdapter(ABC):
         pass  # pragma: no cover
 
     @abstractmethod
-    async def delete_user(self, user_id: str, strategy: DeletionStrategy) -> None:
+    async def delete_user(self, user_id: str, strategy: DeletionStrategy) -> Any:
         """
         Deletes a user.
         If strategy == DeletionStrategy.SOFT, set `deleted_at` to the current UTC time.

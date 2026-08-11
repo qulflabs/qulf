@@ -4,7 +4,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Request, Response, status
 
 from qulf.core import Qulf
-from qulf.exceptions import QulfException
+from qulf.exceptions import QulfException, Requires2FAError
 from qulf.frameworks.base import (
     ChangePasswordRequest,
     ForgotPasswordRequest,
@@ -94,6 +94,11 @@ def serve_qulf(auth: Qulf) -> APIRouter:
         try:
             session = await auth.sign_in(
                 payload.email, payload.password, ip, user_agent
+            )
+        except Requires2FAError as e:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"detail": "2FA required", "temp_token": e.temp_token},
             )
         except QulfException as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

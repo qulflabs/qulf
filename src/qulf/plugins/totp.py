@@ -30,7 +30,7 @@ class TOTPPlugin(QulfPlugin):
 
         # 3. Create a temporary JWT payload
         payload = {
-            "sub": user.id,
+            "sub": str(user.id),
             "type": "2fa_pending",
             "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
         }
@@ -109,8 +109,6 @@ class TOTPPlugin(QulfPlugin):
                     status_code=400, body={"detail": "Temporary Auth token missing."}
                 )
 
-            payload = None
-
             try:
                 payload = jwt.decode(
                     temp_token, self.auth.config.secret_key, algorithms=["HS256"]
@@ -121,8 +119,6 @@ class TOTPPlugin(QulfPlugin):
                 )
 
             user = await self.auth.db.get_user_by_id(payload["sub"])
-
-            secret = None
 
             if not user:
                 return QulfResponse(status_code=400, body={"detail": "User not found"})

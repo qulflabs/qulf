@@ -15,7 +15,7 @@ if not settings.configured:
 from django.test import RequestFactory
 
 from qulf import CookieOptions, HttpMethod, QulfRequest, QulfResponse, QulfRoute
-from qulf.exceptions import QulfException
+from qulf.exceptions import QulfException, Requires2FAError
 from qulf.frameworks.django import (
     _get_client_ip,
     _get_user_agent,
@@ -415,6 +415,26 @@ class TestDjangoAuthEndpoints:
             content_type="application/json",
         )
         assert (await django_views["sign-in"](req4)).status_code == 400
+
+    async def test_django_sign_in_requires_2fa(
+        self, rf: RequestFactory, auth_mock: MagicMock, django_views: dict[str, Any]
+    ) -> None:
+        temp_token = "temporary-2fa-token"
+        auth_mock.sign_in.side_effect = Requires2FAError(temp_token)
+
+        request = rf.post(
+            "/sign-in",
+            data=json.dumps(VALID_SIGN_IN_PAYLOAD),
+            content_type="application/json",
+        )
+
+        response = await django_views["sign-in"](request)
+
+        assert response.status_code == 401
+        assert json.loads(response.content) == {
+            "detail": "2FA required",
+            "temp_token": temp_token,
+        }
 
 
 @pytest.mark.asyncio

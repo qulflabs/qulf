@@ -67,7 +67,7 @@ class TestTOTPFlows:
         with pytest.raises(Requires2FAError) as exc_info:
             await auth.sign_in("t@t.com", "p")
 
-        temp_token = str(exc_info.value)
+        temp_token = exc_info.value.temp_token
 
         new_valid_code = pyotp.TOTP(secret).now()
         res_verify = client.post(

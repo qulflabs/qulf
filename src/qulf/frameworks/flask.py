@@ -7,7 +7,7 @@ from flask import Blueprint, g, jsonify, make_response, request
 from pydantic import ValidationError
 
 from qulf.core import Qulf
-from qulf.exceptions import QulfException
+from qulf.exceptions import QulfException, Requires2FAError
 from qulf.frameworks.base import (
     ChangePasswordRequest,
     ForgotPasswordRequest,
@@ -83,6 +83,8 @@ def serve_qulf(auth: Qulf) -> Blueprint:
                 secure=auth.config.cookies.secure,
             )
             return response
+        except Requires2FAError as e:
+            return jsonify({"detail": "2FA required", "temp_token": e.temp_token}), 401
         except (ValueError, ValidationError, QulfException) as e:
             status_code = 401 if str(e) == "Unauthorized" else 400
             return jsonify({"detail": str(e)}), status_code

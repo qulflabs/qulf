@@ -9,7 +9,7 @@ from django.views.decorators.csrf import csrf_exempt
 from pydantic import ValidationError
 
 from qulf.core import Qulf
-from qulf.exceptions import QulfException
+from qulf.exceptions import QulfException, Requires2FAError
 from qulf.frameworks import (
     ChangePasswordRequest,
     ForgotPasswordRequest,
@@ -115,6 +115,10 @@ def serve_qulf(auth: Qulf) -> list[Any]:
             session = await auth.sign_in(
                 payload.email, payload.password, ip, user_agent
             )
+        except Requires2FAError as e:
+            return JsonResponse(
+                {"detail": "2FA required", "temp_token": e.temp_token}, status=401
+            )
         except (ValueError, ValidationError, QulfException) as e:
             return JsonResponse({"detail": str(e)}, status=400)
 
@@ -127,10 +131,12 @@ def serve_qulf(auth: Qulf) -> list[Any]:
             secure=auth.config.cookies.secure,
             samesite=cast(
                 Literal["Lax", "None", "Strict"],
-                auth.config.cookies.same_site.capitalize(),
-            )
-            if auth.config.cookies.same_site
-            else "Lax",
+                (
+                    auth.config.cookies.same_site.capitalize()
+                    if auth.config.cookies.same_site
+                    else "Lax"
+                ),
+            ),
         )
         return response
 
@@ -192,8 +198,7 @@ def serve_qulf(auth: Qulf) -> list[Any]:
         except (ValueError, ValidationError, QulfException) as e:
             return JsonResponse({"detail": str(e)}, status=400)
 
-    # --- AUTHENTICATED ROUTES ---
-
+    # AUTHENTICATED ROUTES
     async def change_password(request: HttpRequest) -> JsonResponse:
         if request.method != "POST":
             return JsonResponse({"detail": "Method not allowed"}, status=405)

@@ -1,3 +1,4 @@
+import re
 from collections.abc import Callable, Coroutine
 from typing import Any, Literal, cast
 
@@ -7,7 +8,7 @@ from litestar.exceptions import NotAuthorizedException, PermissionDeniedExceptio
 from litestar.types import Method
 
 from qulf.core import Qulf
-from qulf.exceptions import QulfException
+from qulf.exceptions import QulfException, Requires2FAError
 from qulf.frameworks import (
     ChangePasswordRequest,
     ForgotPasswordRequest,
@@ -78,6 +79,10 @@ def serve_qulf(auth: Qulf) -> Router:
 
         try:
             session = await auth.sign_in(data.email, data.password, ip, user_agent)
+        except Requires2FAError as e:
+            return Response(
+                {"detail": "2FA required", "temp_token": e.temp_token}, status_code=401
+            )
         except QulfException as e:
             return Response({"detail": str(e)}, status_code=400)
         cookie = Cookie(
@@ -195,7 +200,12 @@ def serve_qulf(auth: Qulf) -> Router:
             litestar_methods = cast(list[Method], [m.value for m in qulf_route.methods])
 
             def make_handler(route_def: Any) -> Any:
-                @route(path=route_def.path, http_method=litestar_methods)
+                # Litestar requires typed path parameters: {name:str}
+                litestar_path = re.sub(
+                    r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", r"{\1:str}", route_def.path
+                )
+
+                @route(path=litestar_path, http_method=litestar_methods)
                 async def dynamic_endpoint(
                     request: Request[Any, Any, Any],
                 ) -> Response[Any]:
@@ -224,10 +234,10 @@ def serve_qulf(auth: Qulf) -> Router:
                                 raise PermissionDeniedException(
                                     f"Missing required permission: '{perm}'"
                                 )
-                    body = {}
+                    body: dict[str, Any] = {}
                     if request.method in ["POST", "PUT", "PATCH"]:
                         try:
-                            body = await request.json()
+                            body = await request.json() or {}
                         except Exception:
                             # delegate validation to the Plugin layer
                             # and prevent unhandled 500 Server Errors.

@@ -5,7 +5,7 @@ from litestar import Litestar, get
 from litestar.di import NamedDependency, Provide
 from litestar.testing import TestClient
 
-from qulf.exceptions import QulfException
+from qulf.exceptions import QulfException, Requires2FAError
 from qulf.frameworks.litestar import (
     RequiresPermission,
     RequiresRole,
@@ -124,6 +124,21 @@ class TestLitestarAuthEndpoints:
         auth_mock.sign_in.side_effect = QulfException("Invalid credentials")
         res = client.post("/sign-in", json=VALID_SIGN_IN_PAYLOAD)
         assert res.status_code == 400
+
+    def test_lightstar_sign_in_requires_2fa(self, client, auth_mock) -> None:
+        temp_token = "temporary-2fa-token"
+        auth_mock.sign_in.side_effect = Requires2FAError(temp_token)
+
+        response = client.post(
+            "/sign-in",
+            json=VALID_SIGN_IN_PAYLOAD,
+        )
+
+        assert response.status_code == 401
+        assert response.json() == {
+            "detail": "2FA required",
+            "temp_token": temp_token,
+        }
 
     def test_sign_out(self, client: TestClient, auth_mock: MagicMock):
         client.cookies.set(auth_mock.config.cookies.name, "valid_token")

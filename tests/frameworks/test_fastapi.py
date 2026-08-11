@@ -2,7 +2,7 @@ import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from qulf.exceptions import QulfException
+from qulf.exceptions import QulfException, Requires2FAError
 from qulf.frameworks.fastapi import (
     RequiresPermission,
     RequiresRole,
@@ -96,6 +96,23 @@ class TestFastAPIAuthEndpoints:
         auth_mock.sign_in.side_effect = QulfException("Invalid credentials")
         res = client.post("/sign-in", json={"email": "a@b.c", "password": "bad"})
         assert res.status_code == 400
+
+    def test_fastapi_sign_in_requires_2fa(self, client, auth_mock) -> None:
+        temp_token = "temporary-2fa-token"
+        auth_mock.sign_in.side_effect = Requires2FAError(temp_token)
+
+        response = client.post(
+            "/sign-in",
+            json={"email": "a@b.c", "password": "p"},
+        )
+
+        assert response.status_code == 401
+        assert response.json() == {
+            "detail": {
+                "detail": "2FA required",
+                "temp_token": temp_token,
+            }
+        }
 
     def test_sign_out(self, client, auth_mock):
         client.cookies.set(auth_mock.config.cookies.name, "valid_token")

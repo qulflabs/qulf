@@ -16,19 +16,19 @@ requires-python = ">=3.10"
 version = "0.1.0b7"
 
 authors = [
-  {name = "Kaleb Abebe", email = "kaleba647@gmail.com"},
-  {name = "Peter Kinfe", email = "peterkinfe360@gmail.com"},
+  { name = "Kaleb Abebe", email = "kaleba647@gmail.com" },
+  { name = "Peter Kinfe", email = "peterkinfe360@gmail.com" },
 ]
 
 [project.optional-dependencies]
 django = ["django>=4.2"]
 fastapi = ["fastapi>=0.136.3"]
+flask = ["flask >= 3.0, < 4.0"]
 litestar = ["litestar>=2.0.0"]
 motor = ["motor>=3.0"]
+passkey = ["webauthn>=2.0.0"]
 redis = ["redis>=5.0.0"]
 sqlmodel = ["sqlmodel>=0.0.21"]
-flask = ["flask >= 3.0, < 4.0"]
-passkey = ["webauthn>=2.0.0"]
 
 [tool.ruff]
 line-length = 88
@@ -44,9 +44,7 @@ strict = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-filterwarnings = [
-  "default",
-]
+filterwarnings = ["default"]
 testpaths = ["tests"]
 
 [dependency-groups]
@@ -72,13 +70,27 @@ dev = [
   "faker>=40.31.0",
   "aiosqlite>=0.22.1",
   "webauthn>=2.0.0",
+  "uvicorn>=0.52.1",
 ]
 
 [build-system]
 build-backend = "uv_build"
 requires = ["uv_build >= 0.11.7, <0.12.0"]
 
-classifiers = ["Library :: Python :: 3", "Operating System :: OS Independent"]
+classifiers = [
+  "Intended Audience :: Developers",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Operating System :: OS Independent",
+  "Operating System :: POSIX",
+  "Operating System :: MacOS",
+  "Operating System :: Unix",
+]
 
 [project.urls]
 Homepage = "https://github.com/qulflabs/qulf"
@@ -89,8 +101,9 @@ major_version_zero = true
 name = "cz_conventional_commits"
 tag_format = "v$version"
 update_changelog_on_bump = true
-version_files = [
-  "pyproject.toml:version",
-]
+version_files = ["pyproject.toml:version"]
 version_provider = "uv"
 version_scheme = "pep440"
+
+[tool.uv.sources]
+qulf = { workspace = true }

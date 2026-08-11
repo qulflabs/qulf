@@ -219,6 +219,14 @@ class SQLAlchemyAdapter(DatabaseAdapter):
             "permission": self.permission_model,
         }
 
+    @staticmethod
+    def _to_dict(obj: Any) -> dict[str, Any] | None:
+        if obj is None:
+            return obj
+        d = dict(obj.__dict__)
+        d.pop("_sa_instance_state", None)
+        return d
+
     def inject_custom_columns(self, custom_columns: dict[str, dict[str, Any]]) -> None:
         type_mapping = {str: String, bool: Boolean, int: Integer}
 
@@ -243,7 +251,7 @@ class SQLAlchemyAdapter(DatabaseAdapter):
             db_user = result.scalar_one_or_none()
             if not db_user:
                 return None
-            return UserWithPassword.model_validate(db_user, from_attributes=True)
+            return UserWithPassword.model_validate(self._to_dict(db_user))
 
     async def get_user_by_email(self, email: str) -> QulfUserType | None:
         async with self.session_maker() as session:
@@ -252,7 +260,7 @@ class SQLAlchemyAdapter(DatabaseAdapter):
             db_user = result.scalar_one_or_none()
             if not db_user:
                 return None
-            return QulfUserType.model_validate(db_user, from_attributes=True)
+            return QulfUserType.model_validate(self._to_dict(db_user))
 
     async def get_user_by_id_with_password(
         self, user_id: str | int
@@ -263,7 +271,7 @@ class SQLAlchemyAdapter(DatabaseAdapter):
             db_user = result.scalar_one_or_none()
             if not db_user:
                 return None
-            return UserWithPassword.model_validate(db_user, from_attributes=True)
+            return UserWithPassword.model_validate(self._to_dict(db_user))
 
     async def get_user_by_id(self, user_id: str | int) -> QulfUserType | None:
         async with self.session_maker() as session:
@@ -272,7 +280,7 @@ class SQLAlchemyAdapter(DatabaseAdapter):
             db_user = result.scalar_one_or_none()
             if not db_user:
                 return None
-            return QulfUserType.model_validate(db_user, from_attributes=True)
+            return QulfUserType.model_validate(self._to_dict(db_user))
 
     async def create_user(
         self, user_data: UserCreate, hashed_password: str
@@ -288,7 +296,7 @@ class SQLAlchemyAdapter(DatabaseAdapter):
             session.add(new_user)
             await session.commit()
             await session.refresh(new_user)
-            return QulfUserType.model_validate(new_user, from_attributes=True)
+            return QulfUserType.model_validate(self._to_dict(new_user))
 
     async def update_user(
         self, user_id: str | int, update_data: dict[str, Any]
@@ -317,7 +325,7 @@ class SQLAlchemyAdapter(DatabaseAdapter):
 
             await session.commit()
             await session.refresh(user)
-            return QulfUserType.model_validate(user, from_attributes=True)
+            return QulfUserType.model_validate(self._to_dict(user))
 
     async def delete_user(self, user_id: str, strategy: DeletionStrategy) -> None:
 
@@ -354,7 +362,7 @@ class SQLAlchemyAdapter(DatabaseAdapter):
             session.add(new_session)
             await session.commit()
             await session.refresh(new_session)
-            return QulfSessionType.model_validate(new_session, from_attributes=True)
+            return QulfSessionType.model_validate(self._to_dict(new_session))
 
     async def get_session(self, token: str) -> QulfSessionType | None:
         async with self.session_maker() as session:
@@ -363,7 +371,7 @@ class SQLAlchemyAdapter(DatabaseAdapter):
             db_session = result.scalar_one_or_none()
             if not db_session:
                 return None
-            return QulfSessionType.model_validate(db_session, from_attributes=True)
+            return QulfSessionType.model_validate(self._to_dict(db_session))
 
     async def delete_session(self, token: str) -> bool:
         async with self.session_maker() as session:
@@ -386,7 +394,7 @@ class SQLAlchemyAdapter(DatabaseAdapter):
             result = await session.execute(stmt)
             db_session = result.scalars().all()
             return [
-                QulfSessionType.model_validate(db_s, from_attributes=True)
+                QulfSessionType.model_validate(self._to_dict(db_s))
                 for db_s in db_session
             ]
 
@@ -441,7 +449,7 @@ class SQLAlchemyAdapter(DatabaseAdapter):
             session.add(new_account)
             await session.commit()
             await session.refresh(new_account)
-            return QulfAccountType.model_validate(new_account, from_attributes=True)
+            return QulfAccountType.model_validate(self._to_dict(new_account))
 
     async def get_account_by_provider(
         self, provider_id: str, account_id: str
@@ -455,7 +463,7 @@ class SQLAlchemyAdapter(DatabaseAdapter):
             db_account = result.scalar_one_or_none()
             if not db_account:
                 return None
-            return QulfAccountType.model_validate(db_account, from_attributes=True)
+            return QulfAccountType.model_validate(self._to_dict(db_account))
 
     async def create_role(self, name: str, description: str | None = None) -> Role:
         """Create a new role in the roles table."""
@@ -468,7 +476,7 @@ class SQLAlchemyAdapter(DatabaseAdapter):
             session.add(new_role)
             await session.commit()
             await session.refresh(new_role)
-            return Role.model_validate(new_role, from_attributes=True)
+            return Role.model_validate(self._to_dict(new_role))
 
     async def get_role_by_name(self, name: str) -> Role | None:
         """Fetch a role by its unique name."""
@@ -476,9 +484,7 @@ class SQLAlchemyAdapter(DatabaseAdapter):
             stmt = select(self.role_model).where(self.role_model.name == name)
             result = await session.execute(stmt)
             db_role = result.scalar_one_or_none()
-            return (
-                Role.model_validate(db_role, from_attributes=True) if db_role else None
-            )
+            return Role.model_validate(self._to_dict(db_role)) if db_role else None
 
     async def create_permission(
         self, name: str, description: str | None = None
@@ -493,7 +499,7 @@ class SQLAlchemyAdapter(DatabaseAdapter):
             session.add(new_permission)
             await session.commit()
             await session.refresh(new_permission)
-            return Permission.model_validate(new_permission, from_attributes=True)
+            return Permission.model_validate(self._to_dict(new_permission))
 
     async def get_permission_by_name(self, name: str) -> Permission | None:
         """Fetch a permission by its unique name."""
@@ -504,7 +510,7 @@ class SQLAlchemyAdapter(DatabaseAdapter):
             result = await session.execute(stmt)
             db_permission = result.scalar_one_or_none()
             return (
-                Permission.model_validate(db_permission, from_attributes=True)
+                Permission.model_validate(self._to_dict(db_permission))
                 if db_permission
                 else None
             )
@@ -589,8 +595,7 @@ class SQLAlchemyAdapter(DatabaseAdapter):
             )
             result = await session.execute(stmt)
             return [
-                Role.model_validate(r, from_attributes=True)
-                for r in result.scalars().all()
+                Role.model_validate(self._to_dict(r)) for r in result.scalars().all()
             ]
 
     async def get_user_permissions(self, user_id: str | int) -> list[Permission]:
@@ -609,6 +614,6 @@ class SQLAlchemyAdapter(DatabaseAdapter):
             )
             result = await session.execute(stmt)
             return [
-                Permission.model_validate(p, from_attributes=True)
+                Permission.model_validate(self._to_dict(p))
                 for p in result.scalars().all()
             ]

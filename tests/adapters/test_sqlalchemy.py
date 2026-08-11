@@ -33,6 +33,28 @@ async def sqla_seeded_rbac(sqlalchemy_adapter: SQLAlchemyAdapter):
     await sqlalchemy_adapter.grant_permission_to_role("user", "read:users")
 
 
+class TestSQLAlchemyHelpers:
+    def test_to_dict_with_none(self):
+        assert SQLAlchemyAdapter._to_dict(None) is None
+
+    def test_to_dict_removes_sqlalchemy_state(self):
+        class FakeObject:
+            def __init__(self):
+                self.name = "Test"
+                self.email = "test@example.com"
+                self._sa_instance_state = "should be removed"
+
+        obj = FakeObject()
+
+        result = SQLAlchemyAdapter._to_dict(obj)
+
+        assert result == {
+            "name": "Test",
+            "email": "test@example.com",
+        }
+        assert "_sa_instance_state" not in result
+
+
 class TestSQLAlchemyUserManagement:
     @pytest.mark.asyncio
     async def test_user_creation_and_fetches(

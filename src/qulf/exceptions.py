@@ -100,7 +100,9 @@ class Requires2FAError(QulfException):
     Raised when a user tries to login but has 2fa enabled.
     """
 
-    pass
+    def __init__(self, temp_token: str):
+        super().__init__("2FA required")
+        self.temp_token = temp_token
 
 
 class PasskeyVerificationError(AuthenticationError):

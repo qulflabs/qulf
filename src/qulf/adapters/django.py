@@ -463,7 +463,7 @@ class DjangoORMAdapter(DatabaseAdapter):
         try:
             await self.user_role_model.objects.acreate(user_id=user_id, role_id=role.id)
         except IntegrityError:
-            pass
+            pass # Already assigned
 
     async def remove_role_from_user(self, user_id: str | int, role_name: str) -> None:
         role: Any = await self.role_model.objects.filter(name=role_name).afirst()
@@ -490,7 +490,7 @@ class DjangoORMAdapter(DatabaseAdapter):
                 role_id=role.id, permission_id=permission.id
             )
         except IntegrityError:
-            pass
+            pass # Already assigned
 
     async def get_user_roles(self, user_id: str | int) -> list[QulfRoleType]:
         def _get_roles() -> list[Any]:

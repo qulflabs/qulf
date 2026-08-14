@@ -74,7 +74,7 @@ class AccountMixin(SQLModel):
 class DefaultUser(UserMixin, table=True):
     """Default User table schema."""
 
-    __tablename__: ClassVar[Any] = "users"
+    __tablename__: ClassVar[Any] = "users"  # type: ignore[misc]
 
     id: int | None = Field(default=None, primary_key=True)
 
@@ -82,7 +82,7 @@ class DefaultUser(UserMixin, table=True):
 class DefaultSession(SessionMixin, table=True):
     """Default Session table schema."""
 
-    __tablename__: ClassVar[Any] = "sessions"
+    __tablename__: ClassVar[Any] = "sessions"  # type: ignore[misc]
 
     id: int | None = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="users.id")
@@ -91,7 +91,7 @@ class DefaultSession(SessionMixin, table=True):
 class DefaultAccount(AccountMixin, table=True):
     """Default Account table schema."""
 
-    __tablename__: ClassVar[Any] = "accounts"
+    __tablename__: ClassVar[Any] = "accounts"  # type: ignore[misc]
 
     id: int | None = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="users.id")
@@ -101,20 +101,20 @@ class DefaultAccount(AccountMixin, table=True):
 
 
 class UserRoleLink(SQLModel, table=True):
-    __tablename__: ClassVar[Any] = "user_roles"
+    __tablename__: ClassVar[Any] = "user_roles"  # type: ignore[misc]
     user_id: int = Field(foreign_key="users.id", primary_key=True)
     role_id: int = Field(foreign_key="roles.id", primary_key=True)
 
 
 class RolePermissionLink(SQLModel, table=True):
-    __tablename__: ClassVar[Any] = "role_permissions"
+    __tablename__: ClassVar[Any] = "role_permissions"  # type: ignore[misc]
     role_id: int = Field(foreign_key="roles.id", primary_key=True)
     permission_id: int = Field(foreign_key="permissions.id", primary_key=True)
 
 
 # RBAC Default Models
 class DefaultRole(SQLModel, table=True):
-    __tablename__: ClassVar[Any] = "roles"
+    __tablename__: ClassVar[Any] = "roles"  # type: ignore[misc]
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(unique=True, index=True)
     description: str | None = None
@@ -123,7 +123,7 @@ class DefaultRole(SQLModel, table=True):
 
 
 class DefaultPermission(SQLModel, table=True):
-    __tablename__: ClassVar[Any] = "permissions"
+    __tablename__: ClassVar[Any] = "permissions"  # type: ignore[misc]
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(unique=True, index=True)
     description: str | None = None

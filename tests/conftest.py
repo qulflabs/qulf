@@ -246,6 +246,13 @@ def auth(memory_db):
     return Qulf(db=memory_db, config=config)
 
 
+@pytest.fixture
+def django_adapter():
+    from qulf.adapters.django import DjangoORMAdapter
+
+    return DjangoORMAdapter()
+
+
 @pytest_asyncio.fixture
 async def sqlalchemy_adapter():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")

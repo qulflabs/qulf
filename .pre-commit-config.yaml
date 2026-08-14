@@ -33,9 +33,9 @@ repos:
 
       - id: mypy
         name: mypy
-        entry: uv run mypy src/
+        entry: uv run mypy
         language: system
-        pass_filenames: false
+        types: [python]
 
       - id: pytest
         name: pytest

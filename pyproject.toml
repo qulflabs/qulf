@@ -16,8 +16,8 @@ requires-python = ">=3.10"
 version = "0.1.0b7"
 
 authors = [
-  { name = "Kaleb Abebe", email = "kaleba647@gmail.com" },
-  { name = "Peter Kinfe", email = "peterkinfe360@gmail.com" },
+  {name = "Kaleb Abebe", email = "kaleba647@gmail.com"},
+  {name = "Peter Kinfe", email = "peterkinfe360@gmail.com"},
 ]
 
 [project.optional-dependencies]
@@ -43,8 +43,10 @@ python_version = "3.14"
 strict = true
 
 [tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "tests.adapters.django.settings"
 asyncio_mode = "auto"
 filterwarnings = ["default"]
+pythonpath = ["."]
 testpaths = ["tests"]
 
 [dependency-groups]
@@ -71,6 +73,7 @@ dev = [
   "aiosqlite>=0.22.1",
   "webauthn>=2.0.0",
   "uvicorn>=0.52.1",
+  "pytest-django>=4.14.0",
 ]
 
 [build-system]
@@ -106,4 +109,4 @@ version_provider = "uv"
 version_scheme = "pep440"
 
 [tool.uv.sources]
-qulf = { workspace = true }
+qulf = {workspace = true}

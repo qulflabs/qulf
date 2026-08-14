@@ -361,7 +361,7 @@ class Qulf:
         )
         return updated_user
 
-    async def delete_account(self, user_id: str) -> None:
+    async def delete_account(self, user_id: str) -> bool | None:
         """
         Deletes the user account based on the global DeletionStrategy.
         Respects the AccountDeletionConfig.enabled flag.

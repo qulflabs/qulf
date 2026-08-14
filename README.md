@@ -71,17 +71,18 @@ Qulf ships with batteries included. Mix and match to fit your stack:
 | ✅ **FastAPI**    | ✅ **SQLAlchemy**      | ✅ **OAuth2** (GitHub, Google)    |
 | ✅ **Litestar**   | ✅ **SQLModel**        | ✅ **TOTP 2FA** |
 | ✅ **Django**     | ✅ **MongoDB (Motor)** | ✅ **Magic Links** (Passwordless) |
-| ✅ **Flask**      | 🚧 Prisma *(Soon)*    | ✅ **Rate Limiting** |
-| -                | -                     | ✅ **Passkeys / WebAuthn** |
+| ✅ **Flask**      | 🚧 Django *(Soon)*     | ✅ **Rate Limiting** |
+| -                 | 🚧 Prisma *(Soon)*     | ✅ **Passkeys / WebAuthn** |
 
 ### Roadmap (Beyond v1.0.0)
 
 Now that the core ecosystem is stable, we are focusing on Developer Experience
 (DX) and frontend integrations:
 
-- [✅] Role-Based Access Control (RBAC) and Permissions Layer
-- [✅] Flask Framework Adapter. 
-- [✅] Implement WebAuthn / Passkeys Support
+- [x] Role-Based Access Control (RBAC) and Permissions Layer
+- [x] Flask Framework Adapter.
+- [x] Implement WebAuthn / Passkeys Support
+- [-] Django Framework Adapter.
 - [ ] Documentation and Examples
 - [ ] Vanilla JS, React / Next.js SDK (Hooks and server-side utilities).
 - [ ] A CLI tool to help with bootstrapping projects among other things

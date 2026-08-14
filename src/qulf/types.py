@@ -22,7 +22,7 @@ class User(CoreModel):
 
     name: str
     email: EmailStr
-    username: str
+    username: str | None
     email_verified_at: datetime | None = None
     last_login: datetime | None = None
     deleted_at: datetime | None = None

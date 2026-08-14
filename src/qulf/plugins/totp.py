@@ -5,10 +5,9 @@ import jwt
 import pyotp
 from jwt import ExpiredSignatureError, InvalidTokenError
 
-from qulf import QulfRequest, QulfResponse, QulfRoute
 from qulf.exceptions import QulfException, Requires2FAError
-from qulf.plugins import QulfPlugin
-from qulf.routing import CookieOptions
+from qulf.plugins.base import QulfPlugin
+from qulf.routing import CookieOptions, QulfRequest, QulfResponse, QulfRoute
 from qulf.types import Session, User
 
 

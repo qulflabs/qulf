@@ -1,4 +1,4 @@
-class QulfException(BaseException):
+class QulfException(Exception):
     """
     Base exception for all Qulf errors.
     """

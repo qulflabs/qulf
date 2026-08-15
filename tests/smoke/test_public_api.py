@@ -117,3 +117,41 @@ class TestPackageMetadata:
             assert qulf.__version__ == "unknown"
 
         importlib.reload(qulf)
+
+
+class TestExceptionHierarchy:
+    """Regression tests for QL-37.
+
+    QulfException must inherit from Exception, not BaseException, so that
+    standard ``except Exception:`` blocks and web-framework middleware can
+    catch Qulf errors without requiring special-cased handlers.
+    """
+
+    def test_qulf_exception_is_exception_subclass(self) -> None:
+        assert issubclass(QulfException, Exception)
+
+    def test_qulf_exception_is_not_bare_base_exception(self) -> None:
+        # Guard against accidentally re-rooting to BaseException.
+        assert QulfException.__bases__ != (BaseException,)
+
+    def test_all_subclasses_catchable_as_exception(self) -> None:
+        subclasses = [
+            AuthenticationError,
+            AuthorizationError,
+            ConfigurationError,
+            InvalidCredentialsError,
+            InvalidTokenError,
+            PasskeyVerificationError,
+            RateLimitExceededError,
+            Requires2FAError,
+            SessionExpiredError,
+            UserAccountDeactivatedError,
+            UserAlreadyExistsError,
+            UserEmailNotVerifiedError,
+            UserNotFoundError,
+            UserPasswordLoginDisabledError,
+        ]
+        for cls in subclasses:
+            assert issubclass(cls, Exception), (
+                f"{cls.__name__} must be catchable as `except Exception:`"
+            )

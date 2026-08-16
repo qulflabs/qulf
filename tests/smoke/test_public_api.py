@@ -14,6 +14,8 @@ from qulf import (
     HttpMethod,
     InvalidCredentialsError,
     InvalidTokenError,
+    PasskeyCredential,
+    PasskeyCredentialCreate,
     PasskeyVerificationError,
     Permission,
     Qulf,
@@ -78,6 +80,8 @@ class TestQulfInitialization:
         assert ConfigurationError is not None
         assert InvalidCredentialsError is not None
         assert InvalidTokenError is not None
+        assert PasskeyCredential is not None
+        assert PasskeyCredentialCreate is not None
         assert PasskeyVerificationError is not None
         assert RateLimitExceededError is not None
         assert Requires2FAError is not None

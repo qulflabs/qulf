@@ -52,7 +52,7 @@ class TestSQLModelHelpers:
             "name": "Test",
             "email": "test@example.com",
         }
-        assert "_sa_instance_state" not in result
+        assert result is not None and "_sa_instance_state" not in result
 
 
 class TestSQLModelUserManagement:
@@ -333,3 +333,51 @@ class TestSQLModelRBAC:
         updated_perm_names = [p.name for p in updated_permissions]
         assert "write:users" not in updated_perm_names
         assert "read:users" in updated_perm_names
+
+
+class TestSQLModelPasskeys:
+    @pytest.mark.asyncio
+    async def test_passkey_crud(
+        self, sqlmodel_adapter: SQLModelAdapter, sqlmodel_seeded_user
+    ):
+        from qulf.types import PasskeyCredentialCreate
+
+        user_id = sqlmodel_seeded_user.id
+
+        # 1. Create passkey
+        data = PasskeyCredentialCreate(
+            user_id=user_id,
+            credential_id="cred_sqlm_123",
+            public_key="pubkey_hex_123",
+            sign_count=0,
+            name="MacBook",
+        )
+        passkey = await sqlmodel_adapter.create_passkey(data)
+        assert passkey.credential_id == "cred_sqlm_123"
+        assert passkey.name == "MacBook"
+
+        # 2. Get by user
+        passkeys = await sqlmodel_adapter.get_passkeys_by_user(user_id)
+        assert len(passkeys) == 1
+        assert passkeys[0].credential_id == "cred_sqlm_123"
+
+        # 3. Get by credential ID (found & not found)
+        found = await sqlmodel_adapter.get_passkey_by_credential_id("cred_sqlm_123")
+        assert found is not None and found.credential_id == "cred_sqlm_123"
+
+        missing = await sqlmodel_adapter.get_passkey_by_credential_id("nonexistent")
+        assert missing is None
+
+        # 4. Update sign count (existing & non-existing)
+        await sqlmodel_adapter.update_passkey_sign_count("cred_sqlm_123", 5)
+        updated = await sqlmodel_adapter.get_passkey_by_credential_id("cred_sqlm_123")
+        assert updated is not None and updated.sign_count == 5
+
+        await sqlmodel_adapter.update_passkey_sign_count("nonexistent", 10)
+
+        # 5. Delete passkey (true for existing, false for non-existing)
+        deleted = await sqlmodel_adapter.delete_passkey("cred_sqlm_123")
+        assert deleted is True
+
+        deleted_again = await sqlmodel_adapter.delete_passkey("cred_sqlm_123")
+        assert deleted_again is False

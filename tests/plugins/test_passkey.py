@@ -683,6 +683,35 @@ class TestPasskeyLoginComplete:
         assert res.status_code == 400
         assert "Session creation blocked by core" in res.json()["detail"]
 
+    async def test_login_complete_base64url_credential_id(
+        self, registered_user: tuple[User, Qulf, TestClient, PasskeyPlugin]
+    ) -> None:
+        import base64
+
+        user, auth, client, plugin = registered_user
+        token = plugin._encode_challenge(FAKE_CHALLENGE, user.id)
+
+        # Encode credential ID as base64url (non-hex) string
+        b64url_id = (
+            base64.urlsafe_b64encode(FAKE_CREDENTIAL_ID).decode("ascii").rstrip("=")
+        )
+
+        mock_verified = MagicMock()
+        mock_verified.new_sign_count = FAKE_SIGN_COUNT + 1
+
+        with patch(
+            "webauthn.verify_authentication_response", return_value=mock_verified
+        ):
+            res = client.post(
+                "/passkey/login/complete",
+                json={
+                    "challenge_token": token,
+                    "credential": {"rawId": b64url_id},
+                },
+            )
+
+        assert res.status_code == 200
+
 
 @pytest.mark.asyncio
 class TestPasskeyListEndpoint:
@@ -808,3 +837,22 @@ class TestPasskeyDeleteEndpoint:
         cred_id = FAKE_CREDENTIAL_ID.hex()  # belongs to alice
         res = client.request("DELETE", f"/passkey/{cred_id}")
         assert res.status_code == 404
+
+    async def test_delete_passkey_empty_credential_id(
+        self, registered_user: tuple[User, Qulf, TestClient, PasskeyPlugin]
+    ) -> None:
+        user, auth, client, plugin = registered_user
+        session = await auth.sign_in("alice@example.com", "secret")
+
+        # Directly call handler with empty path_params to cover path_params.get fallback
+        from qulf.routing import QulfRequest
+
+        req = QulfRequest(
+            cookies={"qulf_session": session.token},
+            path_params={},
+        )
+        routes = plugin.get_routes()
+        delete_route = next(r for r in routes if r.path == "/passkey/{credential_id}")
+        res = await delete_route.handler(req)
+        assert res.status_code == 400
+        assert res.body is not None and "credential_id is required" in res.body["detail"]

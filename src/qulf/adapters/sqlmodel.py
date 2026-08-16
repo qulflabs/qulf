@@ -583,9 +583,7 @@ class SQLModelAdapter(DatabaseAdapter):
             await session.refresh(row)
             return PasskeyCredential.model_validate(self._to_dict(row))
 
-    async def get_passkeys_by_user(
-        self, user_id: str | int
-    ) -> list[PasskeyCredential]:
+    async def get_passkeys_by_user(self, user_id: str | int) -> list[PasskeyCredential]:
         """Returns all passkey credentials registered for a user."""
         async with self.session_maker() as session:
             stmt = select(self.passkey_model).where(
@@ -616,10 +614,8 @@ class SQLModelAdapter(DatabaseAdapter):
     ) -> None:
         """Updates the monotonic sign counter after a successful authentication."""
         async with self.session_maker() as session:
-            stmt = (
-                select(self.passkey_model).where(
-                    self.passkey_model.credential_id == credential_id
-                )
+            stmt = select(self.passkey_model).where(
+                self.passkey_model.credential_id == credential_id
             )
             result = await session.execute(stmt)
             row = result.scalar_one_or_none()

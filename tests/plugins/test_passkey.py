@@ -22,7 +22,7 @@ from qulf.core import Qulf
 from qulf.exceptions import PasskeyVerificationError, QulfException
 from qulf.frameworks.fastapi import serve_qulf
 from qulf.plugins.passkey import _CHALLENGE_TYPE, PasskeyPlugin
-from qulf.types import PasskeyCredential, PasskeyCredentialCreate, User, UserCreate
+from qulf.types import PasskeyCredentialCreate, User, UserCreate
 
 SECRET = "super_secret_test_key_that_is_at_least_32_bytes_long"
 RP_ID = "example.com"
@@ -154,7 +154,7 @@ class TestPasskeyInternalHelpers:
     def test_get_custom_columns_returns_empty(
         self, passkey_app: tuple[FastAPI, Qulf, TestClient, PasskeyPlugin]
     ) -> None:
-        """Columns are no longer injected into the user table; passkeys have their own table."""
+        """Columns are not injected into user table; passkeys have their own table."""
         _, _, _, plugin = passkey_app
         cols = plugin.get_custom_columns()
         assert cols == {}
@@ -793,7 +793,7 @@ class TestPasskeyDeleteEndpoint:
         _, _, client, _ = passkey_app  # fresh client with no session
 
         # Sign in as a different user.
-        other = await auth.sign_up(
+        await auth.sign_up(
             UserCreate(
                 name="Judy",
                 email="judy@example.com",

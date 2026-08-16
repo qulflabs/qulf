@@ -23,6 +23,8 @@ from qulf.types import (
 )
 from qulf.types import (
     AccountCreate,
+    PasskeyCredential,
+    PasskeyCredentialCreate,
     UserCreate,
     UserWithPassword,
 )
@@ -187,6 +189,40 @@ class DefaultRolePermission(models.Model):
         app_label = "qulf"
 
 
+class PasskeyMixin(models.Model):
+    """
+    Abstract Django model mixin for WebAuthn passkey credentials.
+
+    Each row represents one registered authenticator for a user (Touch ID,
+    Face ID, Windows Hello, hardware security key, etc.).
+    """
+
+    credential_id: Any = models.CharField(
+        max_length=512, unique=True, db_index=True
+    )
+    public_key: Any = models.TextField()
+    sign_count: Any = models.IntegerField(default=0)
+    name: Any = models.CharField(max_length=255, default="Passkey")
+    created_at: Any = models.DateTimeField(auto_now_add=True)
+    updated_at: Any = models.DateTimeField(auto_now=True, null=True)
+
+    class Meta:
+        abstract = True
+
+
+class DefaultPasskey(PasskeyMixin):
+    """Default Passkey credential table (``passkeys``)."""
+
+    id: Any = models.BigAutoField(primary_key=True)
+    user: Any = models.ForeignKey(
+        DefaultUser, on_delete=models.CASCADE, related_name="passkeys"
+    )
+
+    class Meta:
+        db_table = "passkeys"
+        app_label = "qulf"
+
+
 # ADAPTER
 class DjangoORMAdapter(DatabaseAdapter):
     def __init__(
@@ -198,6 +234,7 @@ class DjangoORMAdapter(DatabaseAdapter):
         permission_model: type[models.Model] = DefaultPermission,
         user_role_model: type[models.Model] = DefaultUserRole,
         role_permission_model: type[models.Model] = DefaultRolePermission,
+        passkey_model: type[models.Model] = DefaultPasskey,
     ) -> None:
         self.user_model = user_model
         self.session_model = session_model
@@ -206,6 +243,7 @@ class DjangoORMAdapter(DatabaseAdapter):
         self.permission_model = permission_model
         self.user_role_model = user_role_model
         self.role_permission_model = role_permission_model
+        self.passkey_model = passkey_model
 
     # PYDANTIC MAPPERS
     def _to_pydantic_user(self, db_user: Any) -> QulfUserType:
@@ -269,6 +307,18 @@ class DjangoORMAdapter(DatabaseAdapter):
             description=db_permission.description,
             created_at=db_permission.created_at,
             updated_at=db_permission.updated_at,
+        )
+
+    def _to_pydantic_passkey(self, db_passkey: Any) -> PasskeyCredential:
+        return PasskeyCredential(
+            id=db_passkey.id,
+            user_id=db_passkey.user_id,
+            credential_id=db_passkey.credential_id,
+            public_key=db_passkey.public_key,
+            sign_count=db_passkey.sign_count,
+            name=db_passkey.name,
+            created_at=db_passkey.created_at,
+            updated_at=db_passkey.updated_at,
         )
 
     async def get_user_by_email(self, email: str) -> QulfUserType | None:
@@ -518,3 +568,52 @@ class DjangoORMAdapter(DatabaseAdapter):
 
         permissions: list[Any] = await sync_to_async(_get_permissions)()
         return [self._to_pydantic_permission(p) for p in permissions]
+
+    # Passkey operations
+
+    async def create_passkey(self, data: PasskeyCredentialCreate) -> PasskeyCredential:
+        """Inserts a new passkey credential row and returns the persisted record."""
+        db_passkey: Any = await self.passkey_model.objects.acreate(
+            user_id=data.user_id,
+            credential_id=data.credential_id,
+            public_key=data.public_key,
+            sign_count=data.sign_count,
+            name=data.name,
+        )
+        return self._to_pydantic_passkey(db_passkey)
+
+    async def get_passkeys_by_user(
+        self, user_id: str | int
+    ) -> list[PasskeyCredential]:
+        """Returns all passkey credentials registered for a user."""
+        def _get() -> list[Any]:
+            return list(self.passkey_model.objects.filter(user_id=user_id))
+
+        rows: list[Any] = await sync_to_async(_get)()
+        return [self._to_pydantic_passkey(r) for r in rows]
+
+    async def get_passkey_by_credential_id(
+        self, credential_id: str
+    ) -> PasskeyCredential | None:
+        """Looks up a single passkey row by its hex-encoded credential ID."""
+        db_passkey: Any = await self.passkey_model.objects.filter(
+            credential_id=credential_id
+        ).afirst()
+        if db_passkey is None:
+            return None
+        return self._to_pydantic_passkey(db_passkey)
+
+    async def update_passkey_sign_count(
+        self, credential_id: str, new_sign_count: int
+    ) -> None:
+        """Updates the monotonic sign counter after a successful authentication."""
+        await self.passkey_model.objects.filter(
+            credential_id=credential_id
+        ).aupdate(sign_count=new_sign_count)
+
+    async def delete_passkey(self, credential_id: str) -> bool:
+        """Removes a passkey credential row. Returns True if a row was deleted."""
+        deleted_count, _ = await self.passkey_model.objects.filter(
+            credential_id=credential_id
+        ).adelete()
+        return deleted_count > 0

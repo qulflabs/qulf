@@ -20,6 +20,7 @@ def setup_django_tables(django_db_setup: Any, django_db_blocker: Any) -> None:
 
         from qulf.adapters.django import (
             DefaultAccount,
+            DefaultPasskey,
             DefaultPermission,
             DefaultRole,
             DefaultRolePermission,
@@ -36,6 +37,7 @@ def setup_django_tables(django_db_setup: Any, django_db_blocker: Any) -> None:
             schema_editor.create_model(DefaultPermission)
             schema_editor.create_model(DefaultUserRole)
             schema_editor.create_model(DefaultRolePermission)
+            schema_editor.create_model(DefaultPasskey)
 
 
 @pytest.fixture(autouse=True)
@@ -43,12 +45,14 @@ async def clear_django_db() -> None:
     """Manually flush the database between tests to prevent async transaction leaks."""
     from qulf.adapters.django import (
         DefaultAccount,
+        DefaultPasskey,
         DefaultPermission,
         DefaultRole,
         DefaultSession,
         DefaultUser,
     )
 
+    await DefaultPasskey.objects.all().adelete()
     await DefaultSession.objects.all().adelete()
     await DefaultAccount.objects.all().adelete()
     await DefaultUser.objects.all().adelete()

@@ -10,12 +10,12 @@ Windows Hello, hardware security keys).
 
 Routes
 ------
-POST   /passkey/register/begin      – Session-protected; returns registration options.
-POST   /passkey/register/complete   – Session-protected; verifies attestation + stores key.
-POST   /passkey/login/begin         – Accepts ``email``; returns authentication options.
-POST   /passkey/login/complete      – Verifies assertion + creates a full session.
-GET    /passkey/list                – Session-protected; returns all passkeys for the user.
-DELETE /passkey/{credential_id}     – Session-protected; removes a specific passkey.
+POST   /passkey/register/begin    – Returns registration options.
+POST   /passkey/register/complete – Verifies attestation & stores key.
+POST   /passkey/login/begin       – Accepts ``email``; returns options.
+POST   /passkey/login/complete    – Verifies assertion & creates session.
+GET    /passkey/list              – Returns all passkeys for user.
+DELETE /passkey/{credential_id}   – Removes a specific passkey.
 """
 
 import json
@@ -202,9 +202,9 @@ class PasskeyPlugin(QulfPlugin):
 
             Requires an active session. Expects:
 
-            - ``challenge_token`` – the token returned by ``/passkey/register/begin``.
+            - ``challenge_token`` – token returned by ``/passkey/register/begin``.
             - ``credential``      – the ``PublicKeyCredential`` JSON from the browser.
-            - ``name``            – optional human-readable label (default: ``"Passkey"``).
+            - ``name``            – optional label (default: ``"Passkey"``).
 
             Verifies the attestation and persists the new credential in the
             ``passkeys`` table. A user may complete this flow multiple times

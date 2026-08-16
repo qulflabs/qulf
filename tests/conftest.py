@@ -253,12 +253,8 @@ class MemoryAdapter(DatabaseAdapter):
         self.passkeys[data.credential_id] = passkey
         return passkey
 
-    async def get_passkeys_by_user(
-        self, user_id: str | int
-    ) -> list[PasskeyCredential]:
-        return [
-            pk for pk in self.passkeys.values() if str(pk.user_id) == str(user_id)
-        ]
+    async def get_passkeys_by_user(self, user_id: str | int) -> list[PasskeyCredential]:
+        return [pk for pk in self.passkeys.values() if str(pk.user_id) == str(user_id)]
 
     async def get_passkey_by_credential_id(
         self, credential_id: str

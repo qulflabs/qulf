@@ -666,9 +666,7 @@ class SQLAlchemyAdapter(DatabaseAdapter):
             await session.refresh(row)
             return PasskeyCredential.model_validate(self._to_dict(row))
 
-    async def get_passkeys_by_user(
-        self, user_id: str | int
-    ) -> list[PasskeyCredential]:
+    async def get_passkeys_by_user(self, user_id: str | int) -> list[PasskeyCredential]:
         """Returns all passkey credentials registered for a user."""
         async with self.session_maker() as session:
             stmt = select(self.passkey_model).where(

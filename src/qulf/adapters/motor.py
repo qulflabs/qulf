@@ -359,7 +359,7 @@ class MotorAdapter(DatabaseAdapter):
     # Passkey operations
 
     async def create_passkey(self, data: PasskeyCredentialCreate) -> PasskeyCredential:
-        """Inserts a new passkey credential document and returns the persisted record."""
+        """Inserts a new passkey credential document and returns it."""
         now = datetime.now(timezone.utc)
         doc: dict[str, Any] = {
             "user_id": str(data.user_id),
@@ -374,9 +374,7 @@ class MotorAdapter(DatabaseAdapter):
         doc["_id"] = result.inserted_id
         return self._to_passkey(doc)
 
-    async def get_passkeys_by_user(
-        self, user_id: str | int
-    ) -> list[PasskeyCredential]:
+    async def get_passkeys_by_user(self, user_id: str | int) -> list[PasskeyCredential]:
         """Returns all passkey credentials registered for a user."""
         cursor = self.passkeys.find({"user_id": str(user_id)})
         docs = await cursor.to_list(length=None)
@@ -406,6 +404,6 @@ class MotorAdapter(DatabaseAdapter):
         )
 
     async def delete_passkey(self, credential_id: str) -> bool:
-        """Removes a passkey credential document. Returns True if a document was deleted."""
+        """Removes a passkey document. Returns True if a document was deleted."""
         result = await self.passkeys.delete_one({"credential_id": credential_id})
         return result.deleted_count > 0

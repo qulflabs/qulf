@@ -14,6 +14,8 @@ from qulf.types import (
 )
 from qulf.types import (
     AccountCreate,
+    PasskeyCredential,
+    PasskeyCredentialCreate,
     Permission,
     Role,
     UserCreate,
@@ -131,6 +133,26 @@ class DefaultPermission(SQLModel, table=True):
     updated_at: datetime | None = None
 
 
+class DefaultPasskey(SQLModel, table=True):
+    """
+    Default Passkey credential table (``passkeys``).
+
+    Each row represents one WebAuthn credential for a user. A user may have
+    multiple rows — one per authenticator device (Touch ID, Face ID, etc.).
+    """
+
+    __tablename__: ClassVar[Any] = "passkeys"
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    credential_id: str = Field(unique=True, index=True)
+    public_key: str
+    sign_count: int = 0
+    name: str = "Passkey"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime | None = None
+
+
 class SQLModelAdapter(DatabaseAdapter):
     """
     Concrete DatabaseAdapter subclass leveraging SQLModel (and SQLAlchemy 2.0).
@@ -144,6 +166,7 @@ class SQLModelAdapter(DatabaseAdapter):
         account_model: Any = DefaultAccount,
         role_model: Any = DefaultRole,
         permission_model: Any = DefaultPermission,
+        passkey_model: Any = DefaultPasskey,
     ):
         self.session_maker = session_maker
         self.user_model = user_model
@@ -151,6 +174,7 @@ class SQLModelAdapter(DatabaseAdapter):
         self.account_model = account_model
         self.role_model = role_model
         self.permission_model = permission_model
+        self.passkey_model = passkey_model
 
         self.models = {
             "user": self.user_model,
@@ -539,3 +563,79 @@ class SQLModelAdapter(DatabaseAdapter):
                 Permission.model_validate(self._to_dict(p))
                 for p in result.scalars().all()
             ]
+
+    # Passkey operations
+
+    async def create_passkey(self, data: PasskeyCredentialCreate) -> PasskeyCredential:
+        """Inserts a new passkey credential row and returns the persisted record."""
+        now = datetime.now(timezone.utc)
+        async with self.session_maker() as session:
+            row = self.passkey_model(
+                user_id=data.user_id,
+                credential_id=data.credential_id,
+                public_key=data.public_key,
+                sign_count=data.sign_count,
+                name=data.name,
+                created_at=now,
+            )
+            session.add(row)
+            await session.commit()
+            await session.refresh(row)
+            return PasskeyCredential.model_validate(self._to_dict(row))
+
+    async def get_passkeys_by_user(
+        self, user_id: str | int
+    ) -> list[PasskeyCredential]:
+        """Returns all passkey credentials registered for a user."""
+        async with self.session_maker() as session:
+            stmt = select(self.passkey_model).where(
+                self.passkey_model.user_id == user_id
+            )
+            result = await session.execute(stmt)
+            return [
+                PasskeyCredential.model_validate(self._to_dict(row))
+                for row in result.scalars().all()
+            ]
+
+    async def get_passkey_by_credential_id(
+        self, credential_id: str
+    ) -> PasskeyCredential | None:
+        """Looks up a single passkey row by its hex-encoded credential ID."""
+        async with self.session_maker() as session:
+            stmt = select(self.passkey_model).where(
+                self.passkey_model.credential_id == credential_id
+            )
+            result = await session.execute(stmt)
+            row = result.scalar_one_or_none()
+            if row is None:
+                return None
+            return PasskeyCredential.model_validate(self._to_dict(row))
+
+    async def update_passkey_sign_count(
+        self, credential_id: str, new_sign_count: int
+    ) -> None:
+        """Updates the monotonic sign counter after a successful authentication."""
+        async with self.session_maker() as session:
+            stmt = (
+                select(self.passkey_model).where(
+                    self.passkey_model.credential_id == credential_id
+                )
+            )
+            result = await session.execute(stmt)
+            row = result.scalar_one_or_none()
+            if row:
+                row.sign_count = new_sign_count
+                row.updated_at = datetime.now(timezone.utc)
+                session.add(row)
+                await session.commit()
+
+    async def delete_passkey(self, credential_id: str) -> bool:
+        """Removes a passkey credential row. Returns True if a row was deleted."""
+        async with self.session_maker() as session:
+            stmt = delete(self.passkey_model).where(
+                self.passkey_model.credential_id == credential_id
+            )
+            result = await session.execute(stmt)
+            await session.commit()
+            rowcount = getattr(result, "rowcount", 0)
+            return bool(rowcount and rowcount > 0)

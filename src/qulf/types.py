@@ -124,3 +124,30 @@ class RoleBase(BaseModel):
 
 class Role(CoreModel, RoleBase):
     pass
+
+
+class PasskeyCredentialCreate(BaseModel):
+    """
+    Payload used to insert a new passkey credential row.
+    """
+
+    user_id: int | str
+    credential_id: str  # hex-encoded unique credential ID
+    public_key: str  # hex-encoded COSE public key bytes
+    sign_count: int
+    name: str = "Passkey"  # human-readable label shown in management UIs
+
+
+class PasskeyCredential(CoreModel):
+    """
+    Represents a single WebAuthn credential stored in the ``passkeys`` table.
+
+    A user may have multiple ``PasskeyCredential`` rows (one per authenticator
+    device, e.g. Touch ID, Face ID, Windows Hello, or a hardware security key).
+    """
+
+    user_id: int | str
+    credential_id: str  # hex-encoded; unique across all users
+    public_key: str  # hex-encoded COSE public key bytes
+    sign_count: int  # monotonic replay-protection counter
+    name: str = "Passkey"  # human-readable label

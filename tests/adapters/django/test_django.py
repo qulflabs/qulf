@@ -20,6 +20,7 @@ def setup_django_tables(django_db_setup: Any, django_db_blocker: Any) -> None:
 
         from qulf.adapters.django import (
             DefaultAccount,
+            DefaultPasskey,
             DefaultPermission,
             DefaultRole,
             DefaultRolePermission,
@@ -36,6 +37,7 @@ def setup_django_tables(django_db_setup: Any, django_db_blocker: Any) -> None:
             schema_editor.create_model(DefaultPermission)
             schema_editor.create_model(DefaultUserRole)
             schema_editor.create_model(DefaultRolePermission)
+            schema_editor.create_model(DefaultPasskey)
 
 
 @pytest.fixture(autouse=True)
@@ -43,12 +45,14 @@ async def clear_django_db() -> None:
     """Manually flush the database between tests to prevent async transaction leaks."""
     from qulf.adapters.django import (
         DefaultAccount,
+        DefaultPasskey,
         DefaultPermission,
         DefaultRole,
         DefaultSession,
         DefaultUser,
     )
 
+    await DefaultPasskey.objects.all().adelete()
     await DefaultSession.objects.all().adelete()
     await DefaultAccount.objects.all().adelete()
     await DefaultUser.objects.all().adelete()
@@ -499,3 +503,50 @@ class TestDjangoRBAC:
             side_effect=IntegrityError,
         ):
             await django_adapter.grant_permission_to_role("admin", "read:users")
+
+
+class TestDjangoPasskeys:
+    @pytest.mark.django_db
+    @pytest.mark.asyncio
+    async def test_passkey_crud(
+        self, django_adapter: DjangoORMAdapter, django_seeded_user: Any
+    ) -> None:
+        from qulf.types import PasskeyCredentialCreate
+
+        user_id = django_seeded_user.id
+
+        # 1. Create passkey
+        data = PasskeyCredentialCreate(
+            user_id=user_id,
+            credential_id="cred_django_123",
+            public_key="pubkey_hex_123",
+            sign_count=0,
+            name="MacBook",
+        )
+        passkey = await django_adapter.create_passkey(data)
+        assert passkey.credential_id == "cred_django_123"
+        assert passkey.name == "MacBook"
+
+        # 2. Get by user
+        passkeys = await django_adapter.get_passkeys_by_user(user_id)
+        assert len(passkeys) == 1
+        assert passkeys[0].credential_id == "cred_django_123"
+
+        # 3. Get by credential ID (found & not found)
+        found = await django_adapter.get_passkey_by_credential_id("cred_django_123")
+        assert found is not None and found.credential_id == "cred_django_123"
+
+        missing = await django_adapter.get_passkey_by_credential_id("nonexistent")
+        assert missing is None
+
+        # 4. Update sign count
+        await django_adapter.update_passkey_sign_count("cred_django_123", 5)
+        updated = await django_adapter.get_passkey_by_credential_id("cred_django_123")
+        assert updated is not None and updated.sign_count == 5
+
+        # 5. Delete passkey (true for existing, false for non-existing)
+        deleted = await django_adapter.delete_passkey("cred_django_123")
+        assert deleted is True
+
+        deleted_again = await django_adapter.delete_passkey("cred_django_123")
+        assert deleted_again is False

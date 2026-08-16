@@ -8,7 +8,15 @@ from motor.motor_asyncio import AsyncIOMotorCollection, AsyncIOMotorDatabase
 from qulf.adapters.base import DatabaseAdapter
 from qulf.config import DeletionStrategy
 from qulf.types import Account as QulfAccountType
-from qulf.types import AccountCreate, Permission, Role, UserCreate, UserWithPassword
+from qulf.types import (
+    AccountCreate,
+    PasskeyCredential,
+    PasskeyCredentialCreate,
+    Permission,
+    Role,
+    UserCreate,
+    UserWithPassword,
+)
 from qulf.types import Session as QulfSessionType
 from qulf.types import User as QulfUserType
 
@@ -38,6 +46,7 @@ class MotorAdapter(DatabaseAdapter):
         self.accounts: AsyncIOMotorCollection[dict[str, Any]] = db.accounts
         self.roles: AsyncIOMotorCollection[dict[str, Any]] = db.roles
         self.permissions: AsyncIOMotorCollection[dict[str, Any]] = db.permissions
+        self.passkeys: AsyncIOMotorCollection[dict[str, Any]] = db.passkeys
 
     @staticmethod
     def _id_to_str(doc: dict[str, Any]) -> dict[str, Any]:
@@ -71,6 +80,9 @@ class MotorAdapter(DatabaseAdapter):
 
     def _to_permission(self, doc: dict[str, Any]) -> Permission:
         return Permission.model_validate(self._id_to_str(doc))
+
+    def _to_passkey(self, doc: dict[str, Any]) -> PasskeyCredential:
+        return PasskeyCredential.model_validate(self._id_to_str(doc))
 
     # Schema injection (no-op for MongoDB)
     def inject_custom_columns(self, custom_columns: dict[str, dict[str, type]]) -> None:
@@ -343,3 +355,55 @@ class MotorAdapter(DatabaseAdapter):
         perms = await perms_cursor.to_list(length=None)
 
         return [self._to_permission(p) for p in perms]
+
+    # Passkey operations
+
+    async def create_passkey(self, data: PasskeyCredentialCreate) -> PasskeyCredential:
+        """Inserts a new passkey credential document and returns it."""
+        now = datetime.now(timezone.utc)
+        doc: dict[str, Any] = {
+            "user_id": str(data.user_id),
+            "credential_id": data.credential_id,
+            "public_key": data.public_key,
+            "sign_count": data.sign_count,
+            "name": data.name,
+            "created_at": now,
+            "updated_at": None,
+        }
+        result = await self.passkeys.insert_one(doc)
+        doc["_id"] = result.inserted_id
+        return self._to_passkey(doc)
+
+    async def get_passkeys_by_user(self, user_id: str | int) -> list[PasskeyCredential]:
+        """Returns all passkey credentials registered for a user."""
+        cursor = self.passkeys.find({"user_id": str(user_id)})
+        docs = await cursor.to_list(length=None)
+        return [self._to_passkey(d) for d in docs]
+
+    async def get_passkey_by_credential_id(
+        self, credential_id: str
+    ) -> PasskeyCredential | None:
+        """Looks up a single passkey document by its hex-encoded credential ID."""
+        doc = await self.passkeys.find_one({"credential_id": credential_id})
+        if doc is None:
+            return None
+        return self._to_passkey(doc)
+
+    async def update_passkey_sign_count(
+        self, credential_id: str, new_sign_count: int
+    ) -> None:
+        """Updates the monotonic sign counter after a successful authentication."""
+        await self.passkeys.update_one(
+            {"credential_id": credential_id},
+            {
+                "$set": {
+                    "sign_count": new_sign_count,
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            },
+        )
+
+    async def delete_passkey(self, credential_id: str) -> bool:
+        """Removes a passkey document. Returns True if a document was deleted."""
+        result = await self.passkeys.delete_one({"credential_id": credential_id})
+        return result.deleted_count > 0

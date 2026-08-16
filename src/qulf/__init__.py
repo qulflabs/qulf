@@ -25,6 +25,8 @@ from qulf.routing import CookieOptions, HttpMethod, QulfRequest, QulfResponse, Q
 from qulf.types import (
     Account,
     AccountCreate,
+    PasskeyCredential,
+    PasskeyCredentialCreate,
     Permission,
     Role,
     Session,
@@ -50,6 +52,8 @@ __all__ = [
     "HttpMethod",
     "InvalidCredentialsError",
     "InvalidTokenError",
+    "PasskeyCredential",
+    "PasskeyCredentialCreate",
     "PasskeyVerificationError",
     "Permission",
     "Qulf",

@@ -6,6 +6,8 @@ from qulf.config import DeletionStrategy
 from qulf.types import (
     Account,
     AccountCreate,
+    PasskeyCredential,
+    PasskeyCredentialCreate,
     Permission,
     Role,
     Session,
@@ -194,4 +196,48 @@ class DatabaseAdapter(ABC):
     @abstractmethod
     async def get_user_permissions(self, user_id: str | int) -> list[Permission]:
         """Fetch all unique permissions the user has through their assigned roles."""
+        pass  # pragma: no cover
+
+    # Passkey (WebAuthn) operations
+
+    @abstractmethod
+    async def create_passkey(self, data: PasskeyCredentialCreate) -> PasskeyCredential:
+        """
+        Inserts a new passkey credential row linked to the given user.
+        """
+        pass  # pragma: no cover
+
+    @abstractmethod
+    async def get_passkeys_by_user(self, user_id: str | int) -> list[PasskeyCredential]:
+        """
+        Returns all passkey credentials registered for a user.
+        """
+        pass  # pragma: no cover
+
+    @abstractmethod
+    async def get_passkey_by_credential_id(
+        self, credential_id: str
+    ) -> PasskeyCredential | None:
+        """
+        Looks up a single passkey row by its hex-encoded credential ID.
+        Returns ``None`` if no matching credential exists.
+        """
+        pass  # pragma: no cover
+
+    @abstractmethod
+    async def update_passkey_sign_count(
+        self, credential_id: str, new_sign_count: int
+    ) -> None:
+        """
+        Updates the monotonic sign counter for a credential after successful
+        authentication, preventing replay attacks.
+        """
+        pass  # pragma: no cover
+
+    @abstractmethod
+    async def delete_passkey(self, credential_id: str) -> bool:
+        """
+        Removes a passkey credential by its hex-encoded credential ID.
+        Returns ``True`` if a row was deleted, ``False`` if not found.
+        """
         pass  # pragma: no cover

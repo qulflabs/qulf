@@ -1,5 +1,5 @@
 """
-Unit tests for PasskeyPlugin (WebAuthn / FIDO2).
+Unit tests for PasskeyPlugin (WebAuthn / FIDO2) — multi-passkey support.
 
 All four ``webauthn.*`` library calls are mocked so no real authenticator
 hardware or browser is required. The ``MemoryAdapter`` from ``conftest.py``
@@ -22,7 +22,7 @@ from qulf.core import Qulf
 from qulf.exceptions import PasskeyVerificationError, QulfException
 from qulf.frameworks.fastapi import serve_qulf
 from qulf.plugins.passkey import _CHALLENGE_TYPE, PasskeyPlugin
-from qulf.types import User, UserCreate
+from qulf.types import PasskeyCredentialCreate, User, UserCreate
 
 SECRET = "super_secret_test_key_that_is_at_least_32_bytes_long"
 RP_ID = "example.com"
@@ -31,7 +31,9 @@ ORIGIN = "https://example.com"
 
 FAKE_CHALLENGE = b"\x01\x02\x03\x04"
 FAKE_CREDENTIAL_ID = b"\xaa\xbb\xcc\xdd"
-FAKE_PUBLIC_KEY = b"\x11\x22\x33\x44"
+FAKE_CREDENTIAL_ID_2 = b"\x11\x22\x33\x44"
+FAKE_PUBLIC_KEY = b"\x55\x66\x77\x88"
+FAKE_PUBLIC_KEY_2 = b"\x99\xaa\xbb\xcc"
 FAKE_SIGN_COUNT = 1
 
 
@@ -82,13 +84,15 @@ async def registered_user(
         )
     )
 
-    await auth.db.update_user(
-        user.id,
-        {
-            "passkey_credential_id": FAKE_CREDENTIAL_ID.hex(),
-            "passkey_public_key": FAKE_PUBLIC_KEY.hex(),
-            "passkey_sign_count": 0,
-        },
+    # Register the first passkey via the adapter directly (bypassing the HTTP layer).
+    await auth.db.create_passkey(
+        PasskeyCredentialCreate(
+            user_id=user.id,
+            credential_id=FAKE_CREDENTIAL_ID.hex(),
+            public_key=FAKE_PUBLIC_KEY.hex(),
+            sign_count=0,
+            name="Alice's MacBook",
+        )
     )
     return user, auth, client, plugin
 
@@ -147,15 +151,13 @@ class TestPasskeyInternalHelpers:
         with pytest.raises(PasskeyVerificationError, match="Invalid challenge token"):
             plugin._decode_challenge(token)
 
-    def test_get_custom_columns(
+    def test_get_custom_columns_returns_empty(
         self, passkey_app: tuple[FastAPI, Qulf, TestClient, PasskeyPlugin]
     ) -> None:
+        """Columns are not injected into user table; passkeys have their own table."""
         _, _, _, plugin = passkey_app
         cols = plugin.get_custom_columns()
-        assert "user" in cols
-        assert "passkey_credential_id" in cols["user"]
-        assert "passkey_public_key" in cols["user"]
-        assert "passkey_sign_count" in cols["user"]
+        assert cols == {}
 
 
 @pytest.mark.asyncio
@@ -335,12 +337,44 @@ class TestPasskeyRegisterComplete:
         assert res.status_code == 201
         assert "registered successfully" in res.json()["message"]
 
-        updated = await auth.db.get_user_by_id(user.id)
-        assert updated is not None
-        assert updated.model_extra is not None
-        assert updated.model_extra["passkey_credential_id"] == FAKE_CREDENTIAL_ID.hex()
-        assert updated.model_extra["passkey_public_key"] == FAKE_PUBLIC_KEY.hex()
-        assert updated.model_extra["passkey_sign_count"] == FAKE_SIGN_COUNT
+        # Credential is now in the passkeys table, NOT on the user record.
+        passkeys = await auth.db.get_passkeys_by_user(user.id)
+        assert len(passkeys) == 1
+        assert passkeys[0].credential_id == FAKE_CREDENTIAL_ID.hex()
+        assert passkeys[0].public_key == FAKE_PUBLIC_KEY.hex()
+        assert passkeys[0].sign_count == FAKE_SIGN_COUNT
+
+    async def test_register_second_passkey_success(
+        self, registered_user: tuple[User, Qulf, TestClient, PasskeyPlugin]
+    ) -> None:
+        """A user can register a second passkey (e.g. a hardware security key)."""
+        user, auth, client, plugin = registered_user
+
+        session = await auth.sign_in("alice@example.com", "secret")
+        client.cookies.set("qulf_session", session.token)
+
+        challenge_tok = plugin._encode_challenge(FAKE_CHALLENGE, user.id)
+
+        mock_verified = MagicMock()
+        mock_verified.credential_id = FAKE_CREDENTIAL_ID_2
+        mock_verified.credential_public_key = FAKE_PUBLIC_KEY_2
+        mock_verified.sign_count = 0
+
+        with patch("webauthn.verify_registration_response", return_value=mock_verified):
+            res = client.post(
+                "/passkey/register/complete",
+                json={
+                    "challenge_token": challenge_tok,
+                    "credential": {"id": "x"},
+                    "name": "YubiKey 5",
+                },
+            )
+
+        assert res.status_code == 201
+        passkeys = await auth.db.get_passkeys_by_user(user.id)
+        assert len(passkeys) == 2  # original + new one
+        names = {pk.name for pk in passkeys}
+        assert "YubiKey 5" in names
 
 
 @pytest.mark.asyncio
@@ -401,6 +435,50 @@ class TestPasskeyLoginBegin:
         assert "publicKey" in body
         assert "challenge_token" in body
 
+    async def test_login_begin_lists_all_credentials(
+        self, registered_user: tuple[User, Qulf, TestClient, PasskeyPlugin]
+    ) -> None:
+        """allow_credentials must include all registered passkeys for the user."""
+        user, auth, client, plugin = registered_user
+
+        # Register a second passkey directly.
+        await auth.db.create_passkey(
+            PasskeyCredentialCreate(
+                user_id=user.id,
+                credential_id=FAKE_CREDENTIAL_ID_2.hex(),
+                public_key=FAKE_PUBLIC_KEY_2.hex(),
+                sign_count=0,
+                name="YubiKey",
+            )
+        )
+
+        captured_kwargs: dict[str, Any] = {}
+
+        def fake_gen_auth_opts(**kwargs: Any) -> MagicMock:
+            captured_kwargs.update(kwargs)
+            m = _make_options_mock(FAKE_CHALLENGE)
+            return m
+
+        with (
+            patch(
+                "webauthn.generate_authentication_options",
+                side_effect=fake_gen_auth_opts,
+            ),
+            patch(
+                "qulf.plugins.passkey.options_to_json",
+                return_value=_options_json(FAKE_CHALLENGE),
+            ),
+        ):
+            res = client.post(
+                "/passkey/login/begin", json={"email": "alice@example.com"}
+            )
+
+        assert res.status_code == 200
+        allow_creds = captured_kwargs.get("allow_credentials", [])
+        cred_ids = {bytes(c.id).hex() for c in allow_creds}
+        assert FAKE_CREDENTIAL_ID.hex() in cred_ids
+        assert FAKE_CREDENTIAL_ID_2.hex() in cred_ids
+
 
 @pytest.mark.asyncio
 class TestPasskeyLoginComplete:
@@ -456,9 +534,28 @@ class TestPasskeyLoginComplete:
             )
         )
         token = plugin._encode_challenge(FAKE_CHALLENGE, user.id)
+        # credential dict has no rawId/id → plugin returns 400
         res = client.post(
             "/passkey/login/complete",
-            json={"challenge_token": token, "credential": {"id": "x"}},
+            json={"challenge_token": token, "credential": {}},
+        )
+        assert res.status_code == 400
+        assert "No passkey" in res.json()["detail"]
+
+    async def test_login_complete_credential_id_not_found(
+        self, registered_user: tuple[User, Qulf, TestClient, PasskeyPlugin]
+    ) -> None:
+        """A credential ID that does not match any stored passkey returns 400."""
+        user, auth, client, plugin = registered_user
+
+        token = plugin._encode_challenge(FAKE_CHALLENGE, user.id)
+        unknown_cred_id = b"\xde\xad\xbe\xef".hex()
+        res = client.post(
+            "/passkey/login/complete",
+            json={
+                "challenge_token": token,
+                "credential": {"rawId": unknown_cred_id},
+            },
         )
         assert res.status_code == 400
         assert "No passkey" in res.json()["detail"]
@@ -478,7 +575,10 @@ class TestPasskeyLoginComplete:
         ):
             res = client.post(
                 "/passkey/login/complete",
-                json={"challenge_token": token, "credential": {"id": "x"}},
+                json={
+                    "challenge_token": token,
+                    "credential": {"rawId": FAKE_CREDENTIAL_ID.hex()},
+                },
             )
         assert res.status_code == 500
 
@@ -497,7 +597,10 @@ class TestPasskeyLoginComplete:
         ):
             res = client.post(
                 "/passkey/login/complete",
-                json={"challenge_token": token, "credential": {"id": "x"}},
+                json={
+                    "challenge_token": token,
+                    "credential": {"rawId": FAKE_CREDENTIAL_ID.hex()},
+                },
             )
 
         assert res.status_code == 200
@@ -506,10 +609,51 @@ class TestPasskeyLoginComplete:
         assert body["user"]["email"] == "alice@example.com"
         assert "Signed in successfully" in body["message"]
 
-        updated = await auth.db.get_user_by_id(user.id)
+        # Sign count updated on the passkey row.
+        updated = await auth.db.get_passkey_by_credential_id(FAKE_CREDENTIAL_ID.hex())
         assert updated is not None
-        assert updated.model_extra is not None
-        assert updated.model_extra["passkey_sign_count"] == FAKE_SIGN_COUNT + 1
+        assert updated.sign_count == FAKE_SIGN_COUNT + 1
+
+    async def test_login_complete_selects_correct_credential(
+        self, registered_user: tuple[User, Qulf, TestClient, PasskeyPlugin]
+    ) -> None:
+        """Login succeeds when using the *second* of two registered passkeys."""
+        user, auth, client, plugin = registered_user
+
+        # Register a second passkey.
+        await auth.db.create_passkey(
+            PasskeyCredentialCreate(
+                user_id=user.id,
+                credential_id=FAKE_CREDENTIAL_ID_2.hex(),
+                public_key=FAKE_PUBLIC_KEY_2.hex(),
+                sign_count=5,
+                name="YubiKey",
+            )
+        )
+
+        token = plugin._encode_challenge(FAKE_CHALLENGE, user.id)
+
+        mock_verified = MagicMock()
+        mock_verified.new_sign_count = 6
+
+        with patch(
+            "webauthn.verify_authentication_response", return_value=mock_verified
+        ):
+            res = client.post(
+                "/passkey/login/complete",
+                json={
+                    "challenge_token": token,
+                    # Use the second credential.
+                    "credential": {"rawId": FAKE_CREDENTIAL_ID_2.hex()},
+                },
+            )
+
+        assert res.status_code == 200
+        # Second passkey's sign count updated; first is unchanged.
+        pk2 = await auth.db.get_passkey_by_credential_id(FAKE_CREDENTIAL_ID_2.hex())
+        assert pk2 is not None and pk2.sign_count == 6
+        pk1 = await auth.db.get_passkey_by_credential_id(FAKE_CREDENTIAL_ID.hex())
+        assert pk1 is not None and pk1.sign_count == 0
 
     async def test_login_complete_create_session_fails(
         self, registered_user: tuple[User, Qulf, TestClient, PasskeyPlugin]
@@ -530,8 +674,186 @@ class TestPasskeyLoginComplete:
         ):
             res = client.post(
                 "/passkey/login/complete",
-                json={"challenge_token": token, "credential": {"id": "x"}},
+                json={
+                    "challenge_token": token,
+                    "credential": {"rawId": FAKE_CREDENTIAL_ID.hex()},
+                },
             )
 
         assert res.status_code == 400
         assert "Session creation blocked by core" in res.json()["detail"]
+
+    async def test_login_complete_base64url_credential_id(
+        self, registered_user: tuple[User, Qulf, TestClient, PasskeyPlugin]
+    ) -> None:
+        import base64
+
+        user, auth, client, plugin = registered_user
+        token = plugin._encode_challenge(FAKE_CHALLENGE, user.id)
+
+        # Encode credential ID as base64url (non-hex) string
+        b64url_id = (
+            base64.urlsafe_b64encode(FAKE_CREDENTIAL_ID).decode("ascii").rstrip("=")
+        )
+
+        mock_verified = MagicMock()
+        mock_verified.new_sign_count = FAKE_SIGN_COUNT + 1
+
+        with patch(
+            "webauthn.verify_authentication_response", return_value=mock_verified
+        ):
+            res = client.post(
+                "/passkey/login/complete",
+                json={
+                    "challenge_token": token,
+                    "credential": {"rawId": b64url_id},
+                },
+            )
+
+        assert res.status_code == 200
+
+
+@pytest.mark.asyncio
+class TestPasskeyListEndpoint:
+    async def test_list_requires_auth(
+        self, passkey_app: tuple[FastAPI, Qulf, TestClient, PasskeyPlugin]
+    ) -> None:
+        _, _, client, _ = passkey_app
+        res = client.get("/passkey/list")
+        assert res.status_code == 401
+
+    async def test_list_returns_empty_for_new_user(
+        self, passkey_app: tuple[FastAPI, Qulf, TestClient, PasskeyPlugin]
+    ) -> None:
+        _, auth, client, _ = passkey_app
+
+        await auth.sign_up(
+            UserCreate(
+                name="Ivan",
+                email="ivan@example.com",
+                username="ivan",
+                password="pw",
+                password_confirmation="pw",
+            )
+        )
+        session = await auth.sign_in("ivan@example.com", "pw")
+        client.cookies.set("qulf_session", session.token)
+
+        res = client.get("/passkey/list")
+        assert res.status_code == 200
+        assert res.json()["passkeys"] == []
+
+    async def test_list_returns_all_passkeys(
+        self, registered_user: tuple[User, Qulf, TestClient, PasskeyPlugin]
+    ) -> None:
+        user, auth, client, plugin = registered_user
+
+        # Register a second passkey.
+        await auth.db.create_passkey(
+            PasskeyCredentialCreate(
+                user_id=user.id,
+                credential_id=FAKE_CREDENTIAL_ID_2.hex(),
+                public_key=FAKE_PUBLIC_KEY_2.hex(),
+                sign_count=0,
+                name="YubiKey",
+            )
+        )
+
+        session = await auth.sign_in("alice@example.com", "secret")
+        client.cookies.set("qulf_session", session.token)
+
+        res = client.get("/passkey/list")
+        assert res.status_code == 200
+        passkeys = res.json()["passkeys"]
+        assert len(passkeys) == 2
+        names = {pk["name"] for pk in passkeys}
+        assert "Alice's MacBook" in names
+        assert "YubiKey" in names
+        # Public key bytes must NOT be exposed.
+        for pk in passkeys:
+            assert "public_key" not in pk
+
+
+@pytest.mark.asyncio
+class TestPasskeyDeleteEndpoint:
+    async def test_delete_requires_auth(
+        self, passkey_app: tuple[FastAPI, Qulf, TestClient, PasskeyPlugin]
+    ) -> None:
+        _, _, client, _ = passkey_app
+        cred_id = FAKE_CREDENTIAL_ID.hex()
+        res = client.request("DELETE", f"/passkey/{cred_id}")
+        assert res.status_code == 401
+
+    async def test_delete_passkey_success(
+        self, registered_user: tuple[User, Qulf, TestClient, PasskeyPlugin]
+    ) -> None:
+        user, auth, client, plugin = registered_user
+
+        session = await auth.sign_in("alice@example.com", "secret")
+        client.cookies.set("qulf_session", session.token)
+
+        cred_id = FAKE_CREDENTIAL_ID.hex()
+        res = client.request("DELETE", f"/passkey/{cred_id}")
+        assert res.status_code == 200
+        assert "deleted" in res.json()["message"]
+
+        # Credential is gone.
+        remaining = await auth.db.get_passkeys_by_user(user.id)
+        assert all(pk.credential_id != cred_id for pk in remaining)
+
+    async def test_delete_passkey_not_found(
+        self, registered_user: tuple[User, Qulf, TestClient, PasskeyPlugin]
+    ) -> None:
+        user, auth, client, plugin = registered_user
+
+        session = await auth.sign_in("alice@example.com", "secret")
+        client.cookies.set("qulf_session", session.token)
+
+        res = client.request("DELETE", f"/passkey/{b'unknown'.hex()}")
+        assert res.status_code == 404
+
+    async def test_delete_passkey_other_user_returns_404(
+        self,
+        passkey_app: tuple[FastAPI, Qulf, TestClient, PasskeyPlugin],
+        registered_user: tuple[User, Qulf, TestClient, PasskeyPlugin],
+    ) -> None:
+        """Users cannot delete each other's passkeys."""
+        user, auth, _, plugin = registered_user
+        _, _, client, _ = passkey_app  # fresh client with no session
+
+        # Sign in as a different user.
+        await auth.sign_up(
+            UserCreate(
+                name="Judy",
+                email="judy@example.com",
+                username="judy",
+                password="pw",
+                password_confirmation="pw",
+            )
+        )
+        session = await auth.sign_in("judy@example.com", "pw")
+        client.cookies.set("qulf_session", session.token)
+
+        cred_id = FAKE_CREDENTIAL_ID.hex()  # belongs to alice
+        res = client.request("DELETE", f"/passkey/{cred_id}")
+        assert res.status_code == 404
+
+    async def test_delete_passkey_empty_credential_id(
+        self, registered_user: tuple[User, Qulf, TestClient, PasskeyPlugin]
+    ) -> None:
+        user, auth, client, plugin = registered_user
+        session = await auth.sign_in("alice@example.com", "secret")
+
+        # Directly call handler with empty path_params to cover path_params.get fallback
+        from qulf.routing import QulfRequest
+
+        req = QulfRequest(
+            cookies={"qulf_session": session.token},
+            path_params={},
+        )
+        routes = plugin.get_routes()
+        delete_route = next(r for r in routes if r.path == "/passkey/{credential_id}")
+        res = await delete_route.handler(req)
+        assert (
+            res.body is not None and "credential_id is required" in res.body["detail"]
+        )

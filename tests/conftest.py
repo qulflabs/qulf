@@ -14,6 +14,8 @@ from qulf.routing import CookieOptions, HttpMethod, QulfRequest, QulfResponse, Q
 from qulf.types import (
     Account,
     AccountCreate,
+    PasskeyCredential,
+    PasskeyCredentialCreate,
     Permission,
     Role,
     Session,
@@ -33,6 +35,8 @@ class MemoryAdapter(DatabaseAdapter):
         self.permissions: dict[str, Permission] = {}
         self.user_roles: dict[str, set[str]] = {}
         self.role_permissions: dict[str, set[str]] = {}
+        # Maps hex credential_id -> PasskeyCredential
+        self.passkeys: dict[str, PasskeyCredential] = {}
 
     async def get_user_by_email(self, email: str) -> UserWithPassword | None:
         for u in self.users.values():
@@ -231,6 +235,47 @@ class MemoryAdapter(DatabaseAdapter):
         return [
             self.permissions[name] for name in perm_names if name in self.permissions
         ]
+
+    # Passkey operations
+
+    async def create_passkey(self, data: PasskeyCredentialCreate) -> PasskeyCredential:
+        new_id = str(self._id_counter)
+        self._id_counter += 1
+        passkey = PasskeyCredential(
+            id=new_id,
+            user_id=data.user_id,
+            credential_id=data.credential_id,
+            public_key=data.public_key,
+            sign_count=data.sign_count,
+            name=data.name,
+            created_at=datetime.now(timezone.utc),
+        )
+        self.passkeys[data.credential_id] = passkey
+        return passkey
+
+    async def get_passkeys_by_user(self, user_id: str | int) -> list[PasskeyCredential]:
+        return [pk for pk in self.passkeys.values() if str(pk.user_id) == str(user_id)]
+
+    async def get_passkey_by_credential_id(
+        self, credential_id: str
+    ) -> PasskeyCredential | None:
+        return self.passkeys.get(credential_id)
+
+    async def update_passkey_sign_count(
+        self, credential_id: str, new_sign_count: int
+    ) -> None:
+        passkey = self.passkeys.get(credential_id)
+        if passkey:
+            # PasskeyCredential is a Pydantic model with extra="allow"; replace it
+            self.passkeys[credential_id] = passkey.model_copy(
+                update={"sign_count": new_sign_count}
+            )
+
+    async def delete_passkey(self, credential_id: str) -> bool:
+        if credential_id in self.passkeys:
+            del self.passkeys[credential_id]
+            return True
+        return False
 
 
 @pytest.fixture

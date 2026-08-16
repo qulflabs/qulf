@@ -197,9 +197,7 @@ class PasskeyMixin(models.Model):
     Face ID, Windows Hello, hardware security key, etc.).
     """
 
-    credential_id: Any = models.CharField(
-        max_length=512, unique=True, db_index=True
-    )
+    credential_id: Any = models.CharField(max_length=512, unique=True, db_index=True)
     public_key: Any = models.TextField()
     sign_count: Any = models.IntegerField(default=0)
     name: Any = models.CharField(max_length=255, default="Passkey")
@@ -582,10 +580,9 @@ class DjangoORMAdapter(DatabaseAdapter):
         )
         return self._to_pydantic_passkey(db_passkey)
 
-    async def get_passkeys_by_user(
-        self, user_id: str | int
-    ) -> list[PasskeyCredential]:
+    async def get_passkeys_by_user(self, user_id: str | int) -> list[PasskeyCredential]:
         """Returns all passkey credentials registered for a user."""
+
         def _get() -> list[Any]:
             return list(self.passkey_model.objects.filter(user_id=user_id))
 
@@ -607,9 +604,9 @@ class DjangoORMAdapter(DatabaseAdapter):
         self, credential_id: str, new_sign_count: int
     ) -> None:
         """Updates the monotonic sign counter after a successful authentication."""
-        await self.passkey_model.objects.filter(
-            credential_id=credential_id
-        ).aupdate(sign_count=new_sign_count)
+        await self.passkey_model.objects.filter(credential_id=credential_id).aupdate(
+            sign_count=new_sign_count
+        )
 
     async def delete_passkey(self, credential_id: str) -> bool:
         """Removes a passkey credential row. Returns True if a row was deleted."""

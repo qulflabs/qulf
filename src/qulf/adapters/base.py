@@ -208,9 +208,7 @@ class DatabaseAdapter(ABC):
         pass  # pragma: no cover
 
     @abstractmethod
-    async def get_passkeys_by_user(
-        self, user_id: str | int
-    ) -> list[PasskeyCredential]:
+    async def get_passkeys_by_user(self, user_id: str | int) -> list[PasskeyCredential]:
         """
         Returns all passkey credentials registered for a user.
         """

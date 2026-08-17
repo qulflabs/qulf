@@ -48,6 +48,7 @@ class UserMixin(models.Model):
     """
     Abstract models for the Qulf Account model.
     """
+
     email: Any = models.EmailField(unique=True, db_index=True)
     name: Any = models.CharField(max_length=255, null=True, blank=True)
     username: Any = models.CharField(
@@ -68,6 +69,7 @@ class SessionMixin(models.Model):
     """
     Abstract models for the Qulf Session model.
     """
+
     token: Any = models.CharField(max_length=255, unique=True, db_index=True)
     expires_at: Any = models.DateTimeField()
     ip_address: Any = models.CharField(max_length=255, null=True, blank=True)

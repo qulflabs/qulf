@@ -26,6 +26,8 @@ from qulf.types import (
 
 
 class MemoryAdapter(DatabaseAdapter):
+    name = "memory"
+
     def __init__(self):
         self.users: dict[str, UserWithPassword] = {}
         self.sessions: dict[str, Session] = {}

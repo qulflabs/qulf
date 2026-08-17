@@ -1,3 +1,13 @@
+"""SQLAlchemy models and adapter.
+
+This module provides reusable abstract SQLAlchemy model mixins, default concrete
+models, and a SQLAlchemy database adapter implementing Qulf's database
+interface.
+
+Applications can use the provided default models or extend the abstract
+mixins to define their own models while keeping compatibility with Qulf.
+"""
+
 from datetime import datetime, timezone
 from typing import Any
 
@@ -17,7 +27,7 @@ from sqlalchemy import (
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from qulf.adapters.base import DatabaseAdapter
+from qulf.adapters.base import DatabaseAdapter, SchemaAdapter
 from qulf.config import DeletionStrategy
 from qulf.types import (
     Account as QulfAccountType,
@@ -42,10 +52,6 @@ from qulf.types import (
 class UserMixin:
     """
     SQLAlchemy column definitions for the Qulf User model.
-
-    Using a Mixin allows developers to inherit these field definitions directly
-    into their existing SQLAlchemy user models, avoiding database migration rewrites
-    and letting them extend user schemas with custom application fields.
     """
 
     email: Mapped[str] = mapped_column(String, unique=True, index=True)
@@ -67,9 +73,6 @@ class UserMixin:
 class SessionMixin:
     """
     SQLAlchemy column definitions for the Qulf Session model.
-
-    Like UserMixin, this is modular to facilitate schema integration with
-    custom developer session tables.
     """
 
     token: Mapped[str] = mapped_column(String, unique=True, index=True)
@@ -216,10 +219,12 @@ class DefaultPasskey(QulfBase):
     )
 
 
-class SQLAlchemyAdapter(DatabaseAdapter):
+class SQLAlchemyAdapter(DatabaseAdapter, SchemaAdapter):
     """
     Concrete DatabaseAdapter subclass leveraging SQLAlchemy 2.0 async capabilities.
     """
+
+    name = "sqlalchemy"
 
     def __init__(
         self,
@@ -259,17 +264,18 @@ class SQLAlchemyAdapter(DatabaseAdapter):
     def inject_custom_columns(self, custom_columns: dict[str, dict[str, Any]]) -> None:
         type_mapping = {str: String, bool: Boolean, int: Integer}
 
-        # Iterate dynamically over ANY table the plugins request
         for table_name, columns in custom_columns.items():
-            # Check if Qulf manages table
             model = self.models.get(table_name)
             if not model:
-                continue  # Ignore if plugin tries to inject into a table we don't know
+                continue
 
             for col_name, col_type in columns.items():
                 if not hasattr(model, col_name):
-                    sa_type = type_mapping.get(col_type, String)
-                    setattr(model, col_name, mapped_column(sa_type, nullable=True))
+                    if col_type in type_mapping:
+                        sa_type = type_mapping[col_type]
+                        setattr(model, col_name, mapped_column(sa_type, nullable=True))
+                    else:
+                        setattr(model, col_name, col_type)
 
     async def get_user_by_email_with_password(
         self, email: str
@@ -648,7 +654,6 @@ class SQLAlchemyAdapter(DatabaseAdapter):
             ]
 
     # Passkey operations
-
     async def create_passkey(self, data: PasskeyCredentialCreate) -> PasskeyCredential:
         """Inserts a new passkey credential row and returns the persisted record."""
         now = datetime.now(timezone.utc)

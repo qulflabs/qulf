@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any
+from typing import Any, Protocol
 
 from qulf.config import DeletionStrategy
 from qulf.types import (
@@ -17,21 +17,20 @@ from qulf.types import (
 )
 
 
+class SchemaAdapter(Protocol):
+    def inject_custom_columns(self, custom_columns: dict[str, dict[str, Any]]) -> None:
+        """Inject dynamic columns required by plugins into the ORM models."""
+        pass  # pragma: no cover
+
+
 class DatabaseAdapter(ABC):
     """
     The abstract contract that all Qulf storage backends must implement.
 
-    All database methods are explicitly asynchronous because modern Python
-    web frameworks require non-blocking database queries to maintain high
-    concurrent throughput during connection processing.
+    All database methods are asynchronous.
     """
 
-    def inject_custom_columns(self, custom_columns: dict[str, dict[str, type]]) -> None:
-        """
-        Dynamically injects plugin-requested columns into the database schema.
-        Expected format: {"user": {"two_factor_secret": str}, "session": {...}}
-        """
-        pass  # pragma: no cover
+    name: str
 
     @abstractmethod
     async def get_user_by_email_with_password(

@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from qulf.exceptions import ConfigurationError
 from qulf.routing import QulfRoute
@@ -50,6 +50,9 @@ class QulfPlugin:
         """
         return []  # pragma: no cover
 
+    def get_custom_columns(self) -> dict[str, dict[str, type]]:
+        return {}
+
     async def before_user_create(self, user_data: UserCreate) -> UserCreate:
         """
         **Hook called before a new user is created.**
@@ -98,9 +101,3 @@ class QulfPlugin:
             `ip_address`: IP address of the user
         """
         pass  # pragma: no cover
-
-    def get_custom_columns(self) -> dict[str, dict[str, Any]]:
-        """
-        Allows plugins to inject columns into the core tables.
-        """
-        return {}  # pragma: no cover

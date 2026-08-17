@@ -22,6 +22,7 @@ from qulf.types import User as QulfUserType
 
 
 class MotorAdapter(DatabaseAdapter):
+    name = "motor"
     """
     Concrete DatabaseAdapter backed by MongoDB via the Motor async driver.
 

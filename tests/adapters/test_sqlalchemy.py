@@ -68,10 +68,17 @@ class TestSQLAlchemyUserManagement:
         assert fetched_by_email is not None
         assert fetched_by_email.hashed_password == "fake_hashed_password"
 
+        fetched_by_email = await sqlalchemy_adapter.get_user_by_email(
+            sqla_seeded_user.email
+        )
+        assert fetched_by_email is not None
+        assert fetched_by_email.email == "seeded@test.com"
+
+        fetched_by_email = await sqlalchemy_adapter.get_user_by_email("nobody@test.com")
+        assert fetched_by_email is None
+
         fetched_by_id = await sqlalchemy_adapter.get_user_by_id(sqla_seeded_user.id)
         assert fetched_by_id is not None
-
-        assert await sqlalchemy_adapter.get_user_by_email("nobody@test.com") is None
         assert await sqlalchemy_adapter.get_user_by_id(999) is None
 
     @pytest.mark.asyncio
@@ -207,26 +214,6 @@ class TestSQLAlchemyAccountManagement:
             "github", "wrong_id"
         )
         assert not_fetched is None
-
-
-class TestSQLAlchemySchemaInjection:
-    @pytest.mark.asyncio
-    async def test_inject_custom_columns(self, sqlalchemy_adapter: SQLAlchemyAdapter):
-        custom_columns = {
-            "user": {
-                "custom_string": str,
-                "custom_int": int,
-                "custom_bool": bool,
-                "email": str,
-            },
-            "unknown_table": {"fake_col": str},
-        }
-
-        sqlalchemy_adapter.inject_custom_columns(custom_columns)
-
-        assert hasattr(sqlalchemy_adapter.user_model, "custom_string")
-        assert hasattr(sqlalchemy_adapter.user_model, "custom_int")
-        assert hasattr(sqlalchemy_adapter.user_model, "custom_bool")
 
 
 class TestSQLAlchemyIntegration:

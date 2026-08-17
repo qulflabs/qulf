@@ -1,3 +1,13 @@
+"""SQLModel models and adapter.
+
+This module provides reusable abstract SQLModel model mixins, default concrete
+models, and a SQLModel database adapter implementing Qulf's database
+interface.
+
+Applications can use the provided default models or extend the abstract
+mixins to define their own models while keeping compatibility with Qulf.
+"""
+
 from datetime import datetime, timezone
 from typing import Any, ClassVar
 
@@ -7,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import attributes, mapped_column
 from sqlmodel import Field, SQLModel, col, select
 
-from qulf.adapters.base import DatabaseAdapter
+from qulf.adapters.base import DatabaseAdapter, SchemaAdapter
 from qulf.config import DeletionStrategy
 from qulf.types import (
     Account as QulfAccountType,
@@ -100,8 +110,6 @@ class DefaultAccount(AccountMixin, table=True):
 
 
 # RBAC Link Models (Many-to-Many)
-
-
 class UserRoleLink(SQLModel, table=True):
     __tablename__: ClassVar[Any] = "user_roles"
     user_id: int = Field(foreign_key="users.id", primary_key=True)
@@ -153,10 +161,12 @@ class DefaultPasskey(SQLModel, table=True):
     updated_at: datetime | None = None
 
 
-class SQLModelAdapter(DatabaseAdapter):
+class SQLModelAdapter(DatabaseAdapter, SchemaAdapter):
     """
     Concrete DatabaseAdapter subclass leveraging SQLModel (and SQLAlchemy 2.0).
     """
+
+    name = "sqlmodel"
 
     def __init__(
         self,
@@ -202,10 +212,14 @@ class SQLModelAdapter(DatabaseAdapter):
 
             for col_name, col_type in columns.items():
                 if not hasattr(model, col_name):
-                    sa_type = type_mapping.get(col_type, String)
-                    # We inject at the SQLAlchemy level so the schema builder sees it.
-                    # SQLModel models are SQLAlchemy Declarative classes underneath.
-                    setattr(model, col_name, mapped_column(sa_type, nullable=True))
+                    # If it is a primitive python type, translate it to SQLAlchemy
+                    if col_type in type_mapping:
+                        sa_type = type_mapping[col_type]
+                        # SQLModel classes are SQLAlchemy Declarative classes underneath
+                        setattr(model, col_name, mapped_column(sa_type, nullable=True))
+                    # Otherwise, use the escape hatch object they passed natively
+                    else:
+                        setattr(model, col_name, col_type)
 
     async def get_user_by_email(self, email: str) -> UserWithPassword | None:
         async with self.session_maker() as session:

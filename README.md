@@ -83,11 +83,11 @@ Now that the core ecosystem is stable, we are focusing on Developer Experience
 - [x] Flask Framework Adapter.
 - [x] Implement WebAuthn / Passkeys Support
 - [-] Django Framework Adapter.
-- [ ] Documentation and Examples
+- [-] Documentation and Examples
+- [-] A CLI tool to help with migrations and bootstrapping projects among other things
 - [ ] Vanilla JS, React / Next.js SDK (Hooks and server-side utilities).
-- [ ] A CLI tool to help with bootstrapping projects among other things
 - [ ] Admin Dashboard Plugin (A UI to manage users, sessions, and anything related to authentication and authorization).
-- [ ] More OAuth Providers (Apple, Microsoft, Discord).
+- [ ] More OAuth Providers, WAY more!.
 
 ### Contributing
 

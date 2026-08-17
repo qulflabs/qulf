@@ -13,9 +13,10 @@ from typing import Any
 
 from asgiref.sync import sync_to_async
 from django.db import IntegrityError, models
+from django.db.models import Field
 from django.utils import timezone
 
-from qulf.adapters.base import DatabaseAdapter
+from qulf.adapters.base import DatabaseAdapter, SchemaAdapter
 from qulf.config import DeletionStrategy
 from qulf.exceptions import QulfException
 from qulf.types import (
@@ -44,6 +45,9 @@ from qulf.types import (
 
 # ABSTRACT MODELS
 class UserMixin(models.Model):
+    """
+    Abstract models for the Qulf Account model.
+    """
     email: Any = models.EmailField(unique=True, db_index=True)
     name: Any = models.CharField(max_length=255, null=True, blank=True)
     username: Any = models.CharField(
@@ -61,6 +65,9 @@ class UserMixin(models.Model):
 
 
 class SessionMixin(models.Model):
+    """
+    Abstract models for the Qulf Session model.
+    """
     token: Any = models.CharField(max_length=255, unique=True, db_index=True)
     expires_at: Any = models.DateTimeField()
     ip_address: Any = models.CharField(max_length=255, null=True, blank=True)
@@ -75,7 +82,7 @@ class SessionMixin(models.Model):
 # TODO: Create AccountMixin, RoleMixin, PermissionMixin
 class AccountMixin(models.Model):
     """
-    SQLAlchemy column definitions for the Qulf Account model.
+    Abstract models for the Qulf Account model.
     """
 
     provider_id: Any = models.CharField(max_length=255, null=True, blank=True)
@@ -222,7 +229,9 @@ class DefaultPasskey(PasskeyMixin):
 
 
 # ADAPTER
-class DjangoORMAdapter(DatabaseAdapter):
+class DjangoORMAdapter(DatabaseAdapter, SchemaAdapter):
+    name = "django"
+
     def __init__(
         self,
         user_model: type[models.Model] = DefaultUser,
@@ -318,6 +327,39 @@ class DjangoORMAdapter(DatabaseAdapter):
             created_at=db_passkey.created_at,
             updated_at=db_passkey.updated_at,
         )
+
+    def inject_custom_columns(self, custom_columns: dict[str, dict[str, Any]]) -> None:
+        """Inject dynamic columns required by plugins into the Django models."""
+
+        models_map = {
+            "user": self.user_model,
+            "session": self.session_model,
+            "account": self.account_model,
+        }
+
+        for table_name, columns in custom_columns.items():
+            model = models_map.get(table_name)
+            if not model:
+                continue
+
+            for col_name, col_type in columns.items():
+                if hasattr(model, col_name):
+                    continue
+
+                if isinstance(col_type, Field):
+                    field = col_type
+                elif col_type is str:
+                    field = models.CharField(max_length=255, null=True, blank=True)
+                elif col_type is int:
+                    field = models.IntegerField(null=True, blank=True)
+                elif col_type is bool:
+                    field = models.BooleanField(default=False)
+                elif col_type is datetime:
+                    field = models.DateTimeField(null=True, blank=True)
+                else:
+                    field = models.JSONField(null=True, blank=True)
+
+                field.contribute_to_class(model, col_name)
 
     async def get_user_by_email(self, email: str) -> QulfUserType | None:
         db_user: Any = await self.user_model.objects.filter(email=email).afirst()

@@ -1,9 +1,9 @@
 from datetime import datetime, timedelta, timezone
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 import jwt
 
-from qulf.adapters.base import DatabaseAdapter
+from qulf.adapters.base import DatabaseAdapter, SchemaAdapter
 from qulf.config import QulfConfig
 from qulf.crypto import (
     generate_session_token,
@@ -36,31 +36,35 @@ class Qulf:
         db: DatabaseAdapter,
         config: QulfConfig | None = None,
         plugins: list[QulfPlugin] | None = None,
-    ):
+    ) -> None:
         self.db = db
-
         self.config = config or QulfConfig()
         self.plugins: dict[str, QulfPlugin] = {}
 
-        aggregated_columns: dict[str, dict[str, type]] = {}
+        aggregated_columns: dict[str, dict[str, Any]] = {}
 
         if plugins:
             for plugin in plugins:
                 plugin.setup(self)
                 self.plugins[plugin.name] = plugin
 
-                cols = plugin.get_custom_columns()
+                # Check for a backend/orm specific method first
+                specific_method_name = f"get_{self.db.name}_columns"
+                specific_method = getattr(plugin, specific_method_name, None)
 
-                # Dynamically iterate over ANY table the plugin requests
+                if specific_method:
+                    cols = specific_method()
+                else:
+                    cols = plugin.get_custom_columns()
+
                 for table_name, columns in cols.items():
                     if table_name not in aggregated_columns:
                         aggregated_columns[table_name] = {}
-
                     aggregated_columns[table_name].update(columns)
 
-        # Pass the dictionary to the database adapter
         if hasattr(self.db, "inject_custom_columns"):
-            self.db.inject_custom_columns(aggregated_columns)
+            schema_db = cast(SchemaAdapter, self.db)
+            schema_db.inject_custom_columns(aggregated_columns)
 
     def get_plugin(
         self, plugin_class: type[TPlugin], name: str | None = None

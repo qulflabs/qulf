@@ -17,7 +17,7 @@ def generate_uuid() -> str:
     return str(uuid.uuid4())
 
 class User(UserMixin):
-    id: Any = models.BigAutoField(primary_key=True)
+    id = models.BigAutoField(primary_key=True)
         
     # --- QULF PLUGIN COLUMNS ---
 {plugin_columns}

@@ -21,6 +21,11 @@ authors = [
 ]
 
 [project.optional-dependencies]
+cli = [
+  "rich>=15.0.0",
+  "tomlkit>=0.15.1",
+  "typer>=0.27.1",
+]
 django = ["django>=4.2"]
 fastapi = ["fastapi>=0.136.3"]
 flask = ["flask >= 3.0, < 4.0"]
@@ -29,6 +34,9 @@ motor = ["motor>=3.0"]
 passkey = ["webauthn>=2.0.0"]
 redis = ["redis>=5.0.0"]
 sqlmodel = ["sqlmodel>=0.0.21"]
+
+[project.scripts]
+qulf = "qulf.cli.main:app"
 
 [tool.ruff]
 line-length = 88
@@ -48,6 +56,18 @@ asyncio_mode = "auto"
 filterwarnings = ["default"]
 pythonpath = ["."]
 testpaths = ["tests"]
+
+
+[tool.coverage.report]
+exclude_also = [
+    "def __repr__",
+    "if self\\.debug",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "@(abc\\.)?abstractmethod",
+]
 
 [dependency-groups]
 dev = [
@@ -110,3 +130,7 @@ version_scheme = "pep440"
 
 [tool.uv.sources]
 qulf = {workspace = true}
+
+[tool.qulf]
+app = "src.main:auth"
+models = "models.py"

@@ -125,7 +125,8 @@ def sync_models(
         Panel.fit(
             f"[bold green]Sync Complete for {orm_name}![/]\n\n"
             f"[cyan]Injected:[/] {len(injector.injected_fields)} fields\n"
-            f"[yellow]Skipped (Already defined):[/] {len(injector.skipped_fields)} fields"
+            f"[yellow]Skipped (Already defined):[/] {len(injector.skipped_fields)} "
+            "fields"
         )
     )
 

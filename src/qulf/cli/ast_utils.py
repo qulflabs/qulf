@@ -92,6 +92,8 @@ class ModelInjector(cst.CSTTransformer):
                 self.skipped_fields.append((class_name, col_name))
                 continue
 
+            assign: cst.BaseSmallStatement
+
             if ann_node:
                 assign = cst.AnnAssign(
                     target=cst.Name(col_name),

@@ -1,6 +1,5 @@
+import sys
 from pathlib import Path
-from typing import Any
-from unittest.mock import patch
 
 import pytest
 from typer.testing import CliRunner
@@ -33,7 +32,6 @@ class DummyAuth:
 
 
 # Expose the dummy auth globally so the CLI can dynamically import it via sys.modules
-import sys
 
 sys.modules["dummy_app"] = type("dummy_module", (), {"auth": DummyAuth()})
 

@@ -18,8 +18,6 @@ class TestQulfInitCommand:
     def test_init_no_eject_exits_early(self) -> None:
         """Test the fast-path where the user declines
         to eject models but sets up config."""
-        # Inputs: ORM(django), Eject(N),
-        # AppPath(src.main:auth), ConfigLoc(pyproject.toml)
         result = runner.invoke(
             app, ["--no-eject"], input="django\nsrc.main:auth\npyproject.toml\n"
         )
@@ -137,7 +135,7 @@ class TestQulfInitCommand:
         block without overwriting the whole file."""
         Path("pyproject.toml").write_text("[tool.qulf]\napp = 'old:auth'\n")
 
-        # We manually call _update_or_create_toml to hit the update block directly
+        # manually call _update_or_create_toml to hit the update block
         from qulf.cli.commands.init import _update_or_create_toml
 
         _update_or_create_toml(Path("pyproject.toml"), "new:auth", "new_models.py")
@@ -151,7 +149,7 @@ class TestQulfInitCommand:
         .qulf.toml (Coverage: _update_or_create_toml else branch)."""
         Path(".qulf.toml").write_text("[qulf]\napp = 'old:auth'\n")
 
-        # We manually call _update_or_create_toml to hit the specific logic branch
+        # manually call _update_or_create_toml to hit the specific logic branch
         from qulf.cli.commands.init import _update_or_create_toml
 
         _update_or_create_toml(Path(".qulf.toml"), "new:auth", "new_models.py")

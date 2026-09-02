@@ -31,8 +31,6 @@ class DummyAuth:
     plugins = {"dummy": DummyPlugin()}
 
 
-# Expose the dummy auth globally so the CLI can dynamically import it via sys.modules
-
 sys.modules["dummy_app"] = type("dummy_module", (), {"auth": DummyAuth()})
 
 
@@ -86,8 +84,6 @@ class TestQulfSyncCommand:
             "[qulf]\napp = 'dummy_app:auth'\nmodels = 'models.py'\n"
         )
 
-        # We manually write a file that already has `injected_col` (Assign)
-        # and `ann_col` (AnnAssign) to force the AST utility to skip them.
         Path("models.py").write_text(
             "class User:\n"
             "    id = 1\n"
@@ -117,7 +113,6 @@ class TestQulfSyncCommand:
         )
         Path("models.py").write_text("class User:\n    id = 1\n")
 
-        # FIX: Reset the global test state back to the original DummyPlugin!
         sys.modules["dummy_app"].auth.plugins = {"dummy": DummyPlugin()}
 
         result = runner.invoke(app)
@@ -137,7 +132,10 @@ class SpecificPlugin:
         return {"user": {"generic_col": str}}
 
     def get_django_columns(self) -> dict:
-        return {"user": {"dj_specific": str}}
+        return {
+            "user": {"dj_specific": str},
+            "session": {"dj_session_col": str},
+        }
 
 
 class SpecificAuth:
@@ -150,13 +148,17 @@ def test_sync_with_specific_orm_method() -> None:
     Path(".qulf.toml").write_text(
         "[qulf]\napp = 'dummy_app:auth'\nmodels = 'models.py'\n"
     )
-    Path("models.py").write_text("class User:\n    id = 1\n")
 
-    # Override the dummy auth in sys.modules to use our specific plugin
-    sys.modules["dummy_app"].auth = SpecificAuth()
+    Path("models.py").write_text(
+        "class User:\n    id = 1\n\nclass Session:\n    id = 1\n"
+    )
+
+    sys.modules["dummy_app"].auth.plugins = {"specific": SpecificPlugin()}
 
     result = runner.invoke(app)
     assert result.exit_code == 0
 
     content = Path("models.py").read_text()
     assert "dj_specific =" in content
+    assert "generic_col =" in content
+    assert "dj_session_col =" in content

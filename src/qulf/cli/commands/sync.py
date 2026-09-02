@@ -84,8 +84,16 @@ def sync_models(
     ] = {}
 
     for plugin in auth.plugins.values():
-        specific_method = getattr(plugin, f"get_{orm_name}_columns", None)
+        cols = plugin.get_custom_columns()
+        for table_name, columns in cols.items():
+            class_name = table_name.capitalize()
+            if class_name not in cst_injections:
+                cst_injections[class_name] = {}
+            for col_name, col_type in columns.items():
+                node_tuple = ast_utils.create_fallback_cst_nodes(orm_name, col_type)
+                cst_injections[class_name][col_name] = (*node_tuple, plugin.name)
 
+        specific_method = getattr(plugin, f"get_{orm_name}_columns", None)
         if specific_method:
             import inspect
             import textwrap
@@ -93,20 +101,12 @@ def sync_models(
             raw_source = inspect.getsource(specific_method)
             source = textwrap.dedent(raw_source)
             nodes = ast_utils.extract_nodes_from_source(source)
+
             for table_name, columns in nodes.items():
                 class_name = table_name.capitalize()
                 if class_name not in cst_injections:
                     cst_injections[class_name] = {}
                 for col_name, node_tuple in columns.items():
-                    cst_injections[class_name][col_name] = (*node_tuple, plugin.name)
-        else:
-            cols = plugin.get_custom_columns()
-            for table_name, columns in cols.items():
-                class_name = table_name.capitalize()
-                if class_name not in cst_injections:
-                    cst_injections[class_name] = {}
-                for col_name, col_type in columns.items():
-                    node_tuple = ast_utils.create_fallback_cst_nodes(orm_name, col_type)
                     cst_injections[class_name][col_name] = (*node_tuple, plugin.name)
 
     if not cst_injections:

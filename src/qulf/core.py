@@ -48,14 +48,17 @@ class Qulf:
                 plugin.setup(self)
                 self.plugins[plugin.name] = plugin
 
-                # Check for a backend/orm specific method first
+                cols = plugin.get_custom_columns()
+
                 specific_method_name = f"get_{self.db.name}_columns"
                 specific_method = getattr(plugin, specific_method_name, None)
 
                 if specific_method:
-                    cols = specific_method()
-                else:
-                    cols = plugin.get_custom_columns()
+                    specific_cols = specific_method()
+                    for t_name, t_cols in specific_cols.items():
+                        if t_name not in cols:
+                            cols[t_name] = {}
+                        cols[t_name].update(t_cols)
 
                 for table_name, columns in cols.items():
                     if table_name not in aggregated_columns:
@@ -74,15 +77,14 @@ class Qulf:
         If multiple instances of the same plugin exist, `name` can be provided
         to target a specific instance natively.
         """
-        # specific name is requested, do an O(1) lookup
+        # do an O(1) lookup
         if name:
             plugin = self.plugins.get(name)
-            # Verify the type
             if isinstance(plugin, plugin_class):
                 return plugin
             return None
 
-        # O(N) scan to find the first matching instance
+        # O(N) scan
         for plugin in self.plugins.values():
             if isinstance(plugin, plugin_class):
                 return plugin

@@ -30,12 +30,10 @@ def test_extract_nodes_from_source() -> None:
     assert "test_field" in nodes["user"]
     assert "is_active" in nodes["session"]
 
-    # Verify we extracted the actual CST nodes for the values
     assert isinstance(nodes["user"]["test_field"][0], cst.Call)
 
 
 def test_create_fallback_cst_nodes() -> None:
-    # Django Fallbacks
     dj_str_val, dj_str_ann = create_fallback_cst_nodes("django", str)
     assert (
         "CharField"
@@ -55,7 +53,6 @@ def test_create_fallback_cst_nodes() -> None:
         in cst.Module(body=[cst.SimpleStatementLine(body=[cst.Expr(dj_date_val)])]).code
     )
 
-    # SQLAlchemy Fallbacks (Needs Annotations)
     sa_str_val, sa_str_ann = create_fallback_cst_nodes("sqlalchemy", str)
     assert (
         "mapped_column(String"
@@ -78,7 +75,6 @@ def test_create_fallback_cst_nodes() -> None:
         in cst.Module(body=[cst.SimpleStatementLine(body=[cst.Expr(sa_date_val)])]).code
     )
 
-    # SQLModel Fallbacks
     sm_str_val, sm_str_ann = create_fallback_cst_nodes("sqlmodel", str)
     assert (
         "Field"
@@ -101,7 +97,6 @@ def test_create_fallback_cst_nodes() -> None:
         in cst.Module(body=[cst.SimpleStatementLine(body=[cst.Expr(sm_date_val)])]).code
     )
 
-    # Unsupported Fallback
     with pytest.raises(ValueError, match="Unsupported fallback type"):
         create_fallback_cst_nodes("django", float)
 
@@ -110,7 +105,6 @@ def test_create_fallback_cst_nodes() -> None:
 
 
 def test_model_injector_injection_and_grouping() -> None:
-    # Use textwrap to ensure valid formatting
     original_code = textwrap.dedent("""
     class User:
         id = 1
@@ -125,7 +119,6 @@ def test_model_injector_injection_and_grouping() -> None:
     """)
     tree = cst.parse_module(original_code)
 
-    # Mock CST Nodes for injection
     val1 = cst.parse_expression("models.CharField()")
     val2 = cst.parse_expression("models.BooleanField()")
     ann1 = cst.parse_expression("Mapped[str]")
@@ -147,16 +140,13 @@ def test_model_injector_injection_and_grouping() -> None:
     modified_tree = tree.visit(injector)
     modified_code = modified_tree.code
 
-    # 1. Check skips
     assert len(injector.skipped_fields) == 2
     assert ("User", "existing_field") in injector.skipped_fields
     assert ("User", "existing_ann") in injector.skipped_fields
 
-    # 2. Check injections
     assert len(injector.injected_fields) == 3
     assert "new_field_1: Mapped[str] = models.CharField()" in modified_code
     assert "new_field_2 = models.BooleanField()" in modified_code
 
-    # 3. Check grouping comments
     assert modified_code.count("# Injected by plugin_a") == 1
     assert modified_code.count("# Injected by plugin_b") == 1

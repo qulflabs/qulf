@@ -560,4 +560,3 @@ class TestAppleProvider:
         with pytest.raises(QulfException, match="Could not obtain email from Apple"):
             await provider.get_user_profile("apple_access_token")
         assert provider._pending_id_token is None
-

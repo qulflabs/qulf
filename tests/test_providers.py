@@ -9,6 +9,7 @@ from qulf.providers.base import (
     OAuthTokenResponse,
     OAuthUserProfile,
 )
+from qulf.providers.discord import DiscordProvider
 from qulf.providers.github import GitHubProvider
 from qulf.providers.google import GoogleProvider
 
@@ -216,3 +217,186 @@ class TestGoogleProvider:
         )
         with pytest.raises(QulfException, match="Could not obtain email from Google"):
             await provider.get_user_profile("token")
+
+
+@pytest.mark.asyncio
+class TestDiscordProvider:
+    @pytest.fixture
+    def provider(self) -> DiscordProvider:
+        return DiscordProvider(
+            client_id="dc_id",
+            client_secret="dc_secret",
+            redirect_uri="http://localhost/callback",
+        )
+
+    async def test_discord_authorization_url_default_scopes(
+        self, provider: DiscordProvider
+    ) -> None:
+        url = await provider.get_authorization_url("state_abc")
+        assert "https://discord.com/oauth2/authorize" in url
+        assert "client_id=dc_id" in url
+        assert "redirect_uri=http%3A%2F%2Flocalhost%2Fcallback" in url
+        assert "state=state_abc" in url
+        assert "response_type=code" in url
+        assert "scope=identify+email" in url
+        assert "prompt=consent" in url
+
+    async def test_discord_authorization_url_custom_scopes(self) -> None:
+        provider = DiscordProvider(
+            client_id="dc_id",
+            client_secret="dc_secret",
+            redirect_uri="http://localhost/callback",
+            scopes=["identify", "email", "guilds"],
+        )
+        url = await provider.get_authorization_url("s")
+        assert "scope=identify+email+guilds" in url
+
+    @respx.mock
+    async def test_discord_exchange_code_success(
+        self, provider: DiscordProvider
+    ) -> None:
+        respx.post(provider.TOKEN_URL).mock(
+            return_value=Response(
+                200,
+                json={
+                    "access_token": "dc_token",
+                    "token_type": "Bearer",
+                    "expires_in": 604800,
+                    "refresh_token": "dc_refresh",
+                    "scope": "identify email",
+                },
+            )
+        )
+        token = await provider.exchange_code("code123")
+        assert token.access_token == "dc_token"
+        assert token.token_type == "Bearer"
+        assert token.expires_in == 604800
+        assert token.refresh_token == "dc_refresh"
+        assert token.scope == "identify email"
+
+    @respx.mock
+    async def test_discord_exchange_code_http_error(
+        self, provider: DiscordProvider
+    ) -> None:
+        respx.post(provider.TOKEN_URL).mock(
+            return_value=Response(401, text="Unauthorized")
+        )
+        with pytest.raises(QulfException, match="Failed to fetch access token"):
+            await provider.exchange_code("bad_code")
+
+    @respx.mock
+    async def test_discord_exchange_code_json_error(
+        self, provider: DiscordProvider
+    ) -> None:
+        respx.post(provider.TOKEN_URL).mock(
+            return_value=Response(
+                200,
+                json={"error": "invalid_grant", "error_description": "Invalid code"},
+            )
+        )
+        with pytest.raises(QulfException, match="Invalid code"):
+            await provider.exchange_code("bad_code")
+
+    @respx.mock
+    async def test_discord_exchange_code_json_error_no_description(
+        self, provider: DiscordProvider
+    ) -> None:
+        # Falls back to the raw error key when no description is present.
+        respx.post(provider.TOKEN_URL).mock(
+            return_value=Response(200, json={"error": "invalid_client"})
+        )
+        with pytest.raises(QulfException, match="invalid_client"):
+            await provider.exchange_code("bad_code")
+
+    @respx.mock
+    async def test_discord_get_user_profile_with_avatar(
+        self, provider: DiscordProvider
+    ) -> None:
+        respx.get(provider.USERINFO_URL).mock(
+            return_value=Response(
+                200,
+                json={
+                    "id": "123456789",
+                    "email": "user@discord.com",
+                    "username": "cool_user",
+                    "global_name": "Cool User",
+                    "avatar": "abc123hash",
+                    "verified": True,
+                },
+            )
+        )
+        profile = await provider.get_user_profile("dc_token")
+        assert profile.id == "123456789"
+        assert profile.email == "user@discord.com"
+        assert profile.name == "Cool User"
+        assert profile.username == "cool_user"
+        assert (
+            profile.avatar_url
+            == "https://cdn.discordapp.com/avatars/123456789/abc123hash.png"
+        )
+
+    @respx.mock
+    async def test_discord_get_user_profile_no_avatar(
+        self, provider: DiscordProvider
+    ) -> None:
+        # Users without a custom avatar have avatar=None; avatar_url should be None.
+        respx.get(provider.USERINFO_URL).mock(
+            return_value=Response(
+                200,
+                json={
+                    "id": "987",
+                    "email": "noavatar@discord.com",
+                    "username": "plain_user",
+                    "global_name": None,
+                    "avatar": None,
+                    "verified": True,
+                },
+            )
+        )
+        profile = await provider.get_user_profile("dc_token")
+        assert profile.avatar_url is None
+        # Falls back to username when global_name is None.
+        assert profile.name == "plain_user"
+
+    @respx.mock
+    async def test_discord_get_user_profile_legacy_username_display_name(
+        self, provider: DiscordProvider
+    ) -> None:
+        # Older Discord accounts may not have global_name; fall back to username.
+        respx.get(provider.USERINFO_URL).mock(
+            return_value=Response(
+                200,
+                json={
+                    "id": "111",
+                    "email": "legacy@discord.com",
+                    "username": "legacy_user#1234",
+                    "verified": True,
+                },
+            )
+        )
+        profile = await provider.get_user_profile("dc_token")
+        assert profile.name == "legacy_user#1234"
+
+    @respx.mock
+    async def test_discord_get_user_profile_http_error(
+        self, provider: DiscordProvider
+    ) -> None:
+        respx.get(provider.USERINFO_URL).mock(
+            return_value=Response(401, text="401: Unauthorized")
+        )
+        with pytest.raises(QulfException, match="Failed to fetch user profile"):
+            await provider.get_user_profile("bad_token")
+
+    @respx.mock
+    async def test_discord_get_user_profile_missing_email(
+        self, provider: DiscordProvider
+    ) -> None:
+        # Happens when the token was issued without the `email` scope.
+        respx.get(provider.USERINFO_URL).mock(
+            return_value=Response(
+                200,
+                json={"id": "222", "username": "noemail_user", "verified": True},
+            )
+        )
+        with pytest.raises(QulfException, match="Could not obtain email from Discord"):
+            await provider.get_user_profile("dc_token")

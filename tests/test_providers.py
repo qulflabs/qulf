@@ -1,9 +1,13 @@
+import jwt
 import pytest
 import respx
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
 from httpx import Response
 from pydantic import ValidationError
 
 from qulf.exceptions import QulfException
+from qulf.providers.apple import AppleProvider
 from qulf.providers.base import (
     BaseOAuthProvider,
     OAuthTokenResponse,
@@ -400,3 +404,160 @@ class TestDiscordProvider:
         )
         with pytest.raises(QulfException, match="Could not obtain email from Discord"):
             await provider.get_user_profile("dc_token")
+
+
+@pytest.mark.asyncio
+class TestAppleProvider:
+    @pytest.fixture
+    def ec_private_key(self) -> str:
+        key = ec.generate_private_key(ec.SECP256R1())
+        pem = key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        return pem.decode("utf-8")
+
+    @pytest.fixture
+    def provider(self, ec_private_key: str) -> AppleProvider:
+        return AppleProvider(
+            client_id="com.example.app",
+            team_id="TEAM123456",
+            key_id="KEY1234567",
+            private_key=ec_private_key,
+            redirect_uri="https://example.com/callback",
+        )
+
+    async def test_apple_authorization_url_default_scopes(
+        self, provider: AppleProvider
+    ) -> None:
+        url = await provider.get_authorization_url("state123")
+        assert "https://appleid.apple.com/auth/authorize" in url
+        assert "client_id=com.example.app" in url
+        assert "redirect_uri=https%3A%2F%2Fexample.com%2Fcallback" in url
+        assert "state=state123" in url
+        assert "response_type=code" in url
+        assert "scope=name+email" in url
+        assert "response_mode=form_post" in url
+
+    async def test_apple_authorization_url_custom_scopes(
+        self, ec_private_key: str
+    ) -> None:
+        provider = AppleProvider(
+            client_id="com.example.app",
+            team_id="TEAM123456",
+            key_id="KEY1234567",
+            private_key=ec_private_key,
+            redirect_uri="https://example.com/callback",
+            scopes=["email"],
+        )
+        url = await provider.get_authorization_url("state123")
+        assert "scope=email" in url
+
+    @respx.mock
+    async def test_apple_exchange_code_success(self, provider: AppleProvider) -> None:
+        mock_id_token = jwt.encode(
+            {"sub": "apple_user_123", "email": "user@example.com"},
+            "secret_key_32_bytes_long_1234567890",
+            algorithm="HS256",
+        )
+        respx.post(provider.TOKEN_URL).mock(
+            return_value=Response(
+                200,
+                json={
+                    "access_token": "apple_access_token",
+                    "token_type": "Bearer",
+                    "expires_in": 3600,
+                    "refresh_token": "apple_refresh_token",
+                    "id_token": mock_id_token,
+                },
+            )
+        )
+        token = await provider.exchange_code("code123")
+        assert token.access_token == "apple_access_token"
+        assert token.id_token == mock_id_token
+        assert provider._pending_id_token == mock_id_token
+
+    @respx.mock
+    async def test_apple_exchange_code_http_error(
+        self, provider: AppleProvider
+    ) -> None:
+        respx.post(provider.TOKEN_URL).mock(
+            return_value=Response(400, text="Bad Request")
+        )
+        with pytest.raises(QulfException, match="Failed to fetch access token"):
+            await provider.exchange_code("bad_code")
+
+    @respx.mock
+    async def test_apple_exchange_code_json_error(
+        self, provider: AppleProvider
+    ) -> None:
+        respx.post(provider.TOKEN_URL).mock(
+            return_value=Response(
+                200,
+                json={"error": "invalid_grant", "error_description": "Invalid code"},
+            )
+        )
+        with pytest.raises(QulfException, match="Apple OAuth error: Invalid code"):
+            await provider.exchange_code("bad_code")
+
+    @respx.mock
+    async def test_apple_exchange_code_json_error_no_description(
+        self, provider: AppleProvider
+    ) -> None:
+        respx.post(provider.TOKEN_URL).mock(
+            return_value=Response(200, json={"error": "invalid_client"})
+        )
+        with pytest.raises(QulfException, match="Apple OAuth error: invalid_client"):
+            await provider.exchange_code("bad_code")
+
+    async def test_apple_get_user_profile_success(
+        self, provider: AppleProvider
+    ) -> None:
+        mock_id_token = jwt.encode(
+            {"sub": "apple_user_123", "email": "user@example.com"},
+            "secret_key_32_bytes_long_1234567890",
+            algorithm="HS256",
+        )
+        provider._pending_id_token = mock_id_token
+
+        profile = await provider.get_user_profile("apple_access_token")
+        assert profile.id == "apple_user_123"
+        assert profile.email == "user@example.com"
+        assert profile.name is None
+        assert profile.username is None
+        assert profile.avatar_url is None
+        assert profile.raw_data == {
+            "sub": "apple_user_123",
+            "email": "user@example.com",
+        }
+        assert provider._pending_id_token is None
+
+    async def test_apple_get_user_profile_missing_pending_id_token(
+        self, provider: AppleProvider
+    ) -> None:
+        with pytest.raises(QulfException, match="Apple id_token unavailable"):
+            await provider.get_user_profile("apple_access_token")
+
+    async def test_apple_get_user_profile_invalid_id_token(
+        self, provider: AppleProvider
+    ) -> None:
+        invalid_token: str | None = "invalid.token.str"
+        provider._pending_id_token = invalid_token
+        with pytest.raises(QulfException, match="Failed to decode Apple id_token"):
+            await provider.get_user_profile("apple_access_token")
+        assert provider._pending_id_token is None
+
+    async def test_apple_get_user_profile_missing_email(
+        self, provider: AppleProvider
+    ) -> None:
+        mock_id_token: str | None = jwt.encode(
+            {"sub": "apple_user_123"},
+            "secret_key_32_bytes_long_1234567890",
+            algorithm="HS256",
+        )
+        provider._pending_id_token = mock_id_token
+        with pytest.raises(QulfException, match="Could not obtain email from Apple"):
+            await provider.get_user_profile("apple_access_token")
+        assert provider._pending_id_token is None
+

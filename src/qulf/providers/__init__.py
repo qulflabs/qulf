@@ -3,6 +3,7 @@ from qulf.providers.base import BaseOAuthProvider, OAuthTokenResponse, OAuthUser
 from qulf.providers.discord import DiscordProvider
 from qulf.providers.github import GitHubProvider
 from qulf.providers.google import GoogleProvider
+from qulf.providers.oidc import OIDCProvider
 
 __all__ = [
     "AppleProvider",
@@ -10,6 +11,7 @@ __all__ = [
     "DiscordProvider",
     "GitHubProvider",
     "GoogleProvider",
+    "OIDCProvider",
     "OAuthTokenResponse",
     "OAuthUserProfile",
 ]

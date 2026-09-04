@@ -16,6 +16,7 @@ from qulf.providers.base import (
 from qulf.providers.discord import DiscordProvider
 from qulf.providers.github import GitHubProvider
 from qulf.providers.google import GoogleProvider
+from qulf.providers.oidc import OIDCProvider
 
 
 class MockOAuthProvider(BaseOAuthProvider):
@@ -560,3 +561,300 @@ class TestAppleProvider:
         with pytest.raises(QulfException, match="Could not obtain email from Apple"):
             await provider.get_user_profile("apple_access_token")
         assert provider._pending_id_token is None
+
+
+@pytest.mark.asyncio
+class TestOIDCProvider:
+    async def test_oidc_init_validation(self) -> None:
+        with pytest.raises(
+            QulfException, match="OIDCProvider requires either an 'issuer'"
+        ):
+            OIDCProvider(
+                client_id="id",
+                client_secret="secret",
+                redirect_uri="http://localhost/cb",
+            )
+
+        with pytest.raises(
+            QulfException, match="OIDCProvider requires either an 'issuer'"
+        ):
+            OIDCProvider(
+                client_id="id",
+                client_secret="secret",
+                redirect_uri="http://localhost/cb",
+                authorization_url="http://auth.com",
+            )
+
+        provider = OIDCProvider(
+            client_id="id",
+            client_secret="secret",
+            redirect_uri="http://localhost/cb",
+            authorization_url="http://auth.com/authorize",
+            token_url="http://auth.com/token",
+            id="custom_id",
+            name="Custom Provider",
+        )
+        assert provider.id == "custom_id"
+        assert provider.name == "Custom Provider"
+        assert provider.scopes == ["openid", "profile", "email"]
+
+    async def test_oidc_missing_authorization_url(self) -> None:
+        provider = OIDCProvider(
+            client_id="id",
+            client_secret="secret",
+            redirect_uri="http://localhost/cb",
+            authorization_url="http://auth.com/authorize",
+            token_url="http://auth.com/token",
+        )
+        provider.authorization_url = None
+        with pytest.raises(
+            QulfException, match="OIDC authorization_url is not configured"
+        ):
+            await provider.get_authorization_url("state")
+
+    async def test_oidc_missing_token_url(self) -> None:
+        provider = OIDCProvider(
+            client_id="id",
+            client_secret="secret",
+            redirect_uri="http://localhost/cb",
+            authorization_url="http://auth.com/authorize",
+            token_url="http://auth.com/token",
+        )
+        provider.token_url = None
+        with pytest.raises(QulfException, match="OIDC token_url is not configured"):
+            await provider.exchange_code("code")
+
+    @respx.mock
+    async def test_oidc_discovery_success(self) -> None:
+        issuer = "https://auth.example.com"
+        respx.get(f"{issuer}/.well-known/openid-configuration").mock(
+            return_value=Response(
+                200,
+                json={
+                    "authorization_endpoint": f"{issuer}/oauth/authorize",
+                    "token_endpoint": f"{issuer}/oauth/token",
+                    "userinfo_endpoint": f"{issuer}/oauth/userinfo",
+                },
+            )
+        )
+        provider = OIDCProvider(
+            client_id="oidc_id",
+            client_secret="oidc_secret",
+            redirect_uri="http://localhost/cb",
+            issuer=issuer,
+        )
+        url = await provider.get_authorization_url("state123")
+        assert f"{issuer}/oauth/authorize" in url
+        assert "client_id=oidc_id" in url
+        assert "state=state123" in url
+        assert provider._discovered is True
+        assert provider.token_url == f"{issuer}/oauth/token"
+        assert provider.userinfo_url == f"{issuer}/oauth/userinfo"
+
+    @respx.mock
+    async def test_oidc_discovery_http_error(self) -> None:
+        issuer = "https://bad.example.com"
+        respx.get(f"{issuer}/.well-known/openid-configuration").mock(
+            return_value=Response(500, text="Internal Server Error")
+        )
+        provider = OIDCProvider(
+            client_id="id",
+            client_secret="secret",
+            redirect_uri="http://localhost/cb",
+            issuer=issuer,
+        )
+        with pytest.raises(
+            QulfException, match="Failed to fetch OIDC discovery document"
+        ):
+            await provider.get_authorization_url("state")
+
+    @respx.mock
+    async def test_oidc_discovery_missing_endpoints(self) -> None:
+        issuer = "https://missing.example.com"
+        respx.get(f"{issuer}/.well-known/openid-configuration").mock(
+            return_value=Response(200, json={})
+        )
+        provider = OIDCProvider(
+            client_id="id",
+            client_secret="secret",
+            redirect_uri="http://localhost/cb",
+            issuer=issuer,
+        )
+        with pytest.raises(
+            QulfException, match="OIDC discovery document missing required"
+        ):
+            await provider.get_authorization_url("state")
+
+    @respx.mock
+    async def test_oidc_exchange_code_success(self) -> None:
+        provider = OIDCProvider(
+            client_id="id",
+            client_secret="secret",
+            redirect_uri="http://localhost/cb",
+            authorization_url="https://auth.com/authorize",
+            token_url="https://auth.com/token",
+        )
+        respx.post(provider.token_url).mock(
+            return_value=Response(
+                200,
+                json={
+                    "access_token": "acc_123",
+                    "token_type": "Bearer",
+                    "expires_in": 3600,
+                    "refresh_token": "ref_123",
+                    "id_token": "id_123",
+                },
+            )
+        )
+        token = await provider.exchange_code("code123")
+        assert token.access_token == "acc_123"
+        assert token.id_token == "id_123"
+
+    @respx.mock
+    async def test_oidc_exchange_code_http_error(self) -> None:
+        provider = OIDCProvider(
+            client_id="id",
+            client_secret="secret",
+            redirect_uri="http://localhost/cb",
+            authorization_url="https://auth.com/authorize",
+            token_url="https://auth.com/token",
+        )
+        respx.post(provider.token_url).mock(
+            return_value=Response(400, text="Bad Request")
+        )
+        with pytest.raises(QulfException, match="Failed to fetch access token"):
+            await provider.exchange_code("code")
+
+    @respx.mock
+    async def test_oidc_exchange_code_json_error(self) -> None:
+        provider = OIDCProvider(
+            client_id="id",
+            client_secret="secret",
+            redirect_uri="http://localhost/cb",
+            authorization_url="https://auth.com/authorize",
+            token_url="https://auth.com/token",
+        )
+        respx.post(provider.token_url).mock(
+            return_value=Response(
+                200, json={"error": "invalid_grant", "error_description": "Bad code"}
+            )
+        )
+        with pytest.raises(QulfException, match="OIDC OAuth error: Bad code"):
+            await provider.exchange_code("code")
+
+    @respx.mock
+    async def test_oidc_get_user_profile_success(self) -> None:
+        provider = OIDCProvider(
+            client_id="id",
+            client_secret="secret",
+            redirect_uri="http://localhost/cb",
+            authorization_url="https://auth.com/authorize",
+            token_url="https://auth.com/token",
+            userinfo_url="https://auth.com/userinfo",
+        )
+        respx.get("https://auth.com/userinfo").mock(
+            return_value=Response(
+                200,
+                json={
+                    "sub": "oidc_user_789",
+                    "email": "oidc@example.com",
+                    "name": "OIDC User",
+                    "preferred_username": "oidc_user",
+                    "picture": "https://example.com/avatar.png",
+                },
+            )
+        )
+        profile = await provider.get_user_profile("token_123")
+        assert profile.id == "oidc_user_789"
+        assert profile.email == "oidc@example.com"
+        assert profile.name == "OIDC User"
+        assert profile.username == "oidc_user"
+        assert profile.avatar_url == "https://example.com/avatar.png"
+
+    @respx.mock
+    async def test_oidc_get_user_profile_name_fallbacks(self) -> None:
+        provider = OIDCProvider(
+            client_id="id",
+            client_secret="secret",
+            redirect_uri="http://localhost/cb",
+            authorization_url="https://auth.com/authorize",
+            token_url="https://auth.com/token",
+            userinfo_url="https://auth.com/userinfo",
+        )
+        respx.get("https://auth.com/userinfo").mock(
+            return_value=Response(
+                200,
+                json={
+                    "sub": "oidc_user_789",
+                    "email": "user.name@example.com",
+                    "given_name": "Jane",
+                    "family_name": "Doe",
+                },
+            )
+        )
+        profile = await provider.get_user_profile("token_123")
+        assert profile.name == "Jane Doe"
+        assert profile.username == "user.name"
+
+    async def test_oidc_get_user_profile_missing_userinfo_url(self) -> None:
+        provider = OIDCProvider(
+            client_id="id",
+            client_secret="secret",
+            redirect_uri="http://localhost/cb",
+            authorization_url="https://auth.com/authorize",
+            token_url="https://auth.com/token",
+        )
+        with pytest.raises(QulfException, match="OIDC userinfo_url is not configured"):
+            await provider.get_user_profile("token")
+
+    @respx.mock
+    async def test_oidc_get_user_profile_http_error(self) -> None:
+        provider = OIDCProvider(
+            client_id="id",
+            client_secret="secret",
+            redirect_uri="http://localhost/cb",
+            authorization_url="https://auth.com/authorize",
+            token_url="https://auth.com/token",
+            userinfo_url="https://auth.com/userinfo",
+        )
+        respx.get("https://auth.com/userinfo").mock(
+            return_value=Response(401, text="Unauthorized")
+        )
+        with pytest.raises(QulfException, match="Failed to fetch user profile"):
+            await provider.get_user_profile("token")
+
+    @respx.mock
+    async def test_oidc_get_user_profile_missing_sub(self) -> None:
+        provider = OIDCProvider(
+            client_id="id",
+            client_secret="secret",
+            redirect_uri="http://localhost/cb",
+            authorization_url="https://auth.com/authorize",
+            token_url="https://auth.com/token",
+            userinfo_url="https://auth.com/userinfo",
+        )
+        respx.get("https://auth.com/userinfo").mock(
+            return_value=Response(200, json={"email": "nosub@example.com"})
+        )
+        with pytest.raises(
+            QulfException, match="Could not obtain sub from OIDC provider"
+        ):
+            await provider.get_user_profile("token")
+
+    @respx.mock
+    async def test_oidc_get_user_profile_missing_email(self) -> None:
+        provider = OIDCProvider(
+            client_id="id",
+            client_secret="secret",
+            redirect_uri="http://localhost/cb",
+            authorization_url="https://auth.com/authorize",
+            token_url="https://auth.com/token",
+            userinfo_url="https://auth.com/userinfo",
+        )
+        respx.get("https://auth.com/userinfo").mock(
+            return_value=Response(200, json={"sub": "123"})
+        )
+        with pytest.raises(
+            QulfException, match="Could not obtain email from OIDC provider"
+        ):
+            await provider.get_user_profile("token")

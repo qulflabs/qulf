@@ -1,7 +1,7 @@
 import typer
 from rich.console import Console
 
-from qulf.cli.commands import init, sync
+from qulf.cli.commands import init, migrate, sync
 
 app = typer.Typer(
     name="qulf",
@@ -17,6 +17,7 @@ app.add_typer(
     name="sync",
     help="Synchronize active plugins into your local models file.",
 )
+app.add_typer(migrate.app, name="migrate", help="Orchestrate database migrations.")
 
 
 @app.callback()

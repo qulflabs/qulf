@@ -15,8 +15,10 @@ def isolate_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
 
 
+# --- Global Dummy Classes ---
 class DummyDB:
-    name = "django"
+    def __init__(self) -> None:
+        self.name = "django"
 
 
 class DummyPlugin:
@@ -27,11 +29,27 @@ class DummyPlugin:
 
 
 class DummyAuth:
-    db = DummyDB()
-    plugins = {"dummy": DummyPlugin()}
+    def __init__(self) -> None:
+        self.db = DummyDB()
+        self.plugins = {"dummy": DummyPlugin()}
 
 
-sys.modules["dummy_app"] = type("dummy_module", (), {"auth": DummyAuth()})
+class SpecificPlugin:
+    name = "specific"
+
+    def get_custom_columns(self) -> dict:
+        return {"user": {"generic_col": str}}
+
+    def get_django_columns(self) -> dict:
+        return {"user": {"dj_specific": str}, "session": {"dj_session_col": str}}
+
+
+@pytest.fixture(autouse=True)
+def setup_dummy_app(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Creates a FRESH module and auth instance for every test."""
+    fresh_auth = DummyAuth()
+    dummy_module = type("dummy_module", (), {"auth": fresh_auth})
+    monkeypatch.setitem(sys.modules, "dummy_app", dummy_module)
 
 
 class TestQulfSyncCommand:
@@ -123,19 +141,6 @@ class TestQulfSyncCommand:
         content = Path("models.py").read_text()
         assert "injected_col =" in content
         assert "# Injected by dummy:" in content
-
-
-class SpecificPlugin:
-    name = "specific"
-
-    def get_custom_columns(self) -> dict:
-        return {"user": {"generic_col": str}}
-
-    def get_django_columns(self) -> dict:
-        return {
-            "user": {"dj_specific": str},
-            "session": {"dj_session_col": str},
-        }
 
 
 class SpecificAuth:

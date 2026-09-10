@@ -21,6 +21,9 @@ authors = [
 ]
 
 [project.optional-dependencies]
+alembic = [
+  "alembic>=1.19.2",
+]
 cli = [
   "libcst>=1.9.0",
   "rich>=15.0.0",
@@ -58,16 +61,15 @@ filterwarnings = ["default"]
 pythonpath = ["."]
 testpaths = ["tests"]
 
-
 [tool.coverage.report]
 exclude_also = [
-    "def __repr__",
-    "if self\\.debug",
-    "raise AssertionError",
-    "raise NotImplementedError",
-    "if 0:",
-    "if __name__ == .__main__.:",
-    "@(abc\\.)?abstractmethod",
+  "def __repr__",
+  "if self\\.debug",
+  "raise AssertionError",
+  "raise NotImplementedError",
+  "if 0:",
+  "if __name__ == .__main__.:",
+  "@(abc\\.)?abstractmethod",
 ]
 
 [dependency-groups]
@@ -131,3 +133,6 @@ version_scheme = "pep440"
 
 [tool.uv.sources]
 qulf = {workspace = true}
+[tool.qulf]
+app = "src.main:auth"
+models = "models.py"

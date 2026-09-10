@@ -11,33 +11,32 @@ from qulf.core import Qulf
 from qulf.exceptions import QulfException
 from qulf.types import AccountCreate, UserCreate
 
+# @pytest.fixture(scope="session", autouse=True)
+# def setup_django_tables(django_db_setup: Any, django_db_blocker: Any) -> None:
+#     """Foolproof way to build tables for standalone library models."""
+#     with django_db_blocker.unblock():
+#         from django.db import connection
 
-@pytest.fixture(scope="session", autouse=True)
-def setup_django_tables(django_db_setup: Any, django_db_blocker: Any) -> None:
-    """Foolproof way to build tables for standalone library models."""
-    with django_db_blocker.unblock():
-        from django.db import connection
+#         from qulf.adapters.django import (
+#             DefaultAccount,
+#             DefaultPasskey,
+#             DefaultPermission,
+#             DefaultRole,
+#             DefaultRolePermission,
+#             DefaultSession,
+#             DefaultUser,
+#             DefaultUserRole,
+#         )
 
-        from qulf.adapters.django import (
-            DefaultAccount,
-            DefaultPasskey,
-            DefaultPermission,
-            DefaultRole,
-            DefaultRolePermission,
-            DefaultSession,
-            DefaultUser,
-            DefaultUserRole,
-        )
-
-        with connection.schema_editor() as schema_editor:
-            schema_editor.create_model(DefaultUser)
-            schema_editor.create_model(DefaultSession)
-            schema_editor.create_model(DefaultAccount)
-            schema_editor.create_model(DefaultRole)
-            schema_editor.create_model(DefaultPermission)
-            schema_editor.create_model(DefaultUserRole)
-            schema_editor.create_model(DefaultRolePermission)
-            schema_editor.create_model(DefaultPasskey)
+#         with connection.schema_editor() as schema_editor:
+#             schema_editor.create_model(DefaultUser)
+#             schema_editor.create_model(DefaultSession)
+#             schema_editor.create_model(DefaultAccount)
+#             schema_editor.create_model(DefaultRole)
+#             schema_editor.create_model(DefaultPermission)
+#             schema_editor.create_model(DefaultUserRole)
+#             schema_editor.create_model(DefaultRolePermission)
+#             schema_editor.create_model(DefaultPasskey)
 
 
 @pytest.fixture(autouse=True)

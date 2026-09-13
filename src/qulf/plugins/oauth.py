@@ -1,5 +1,6 @@
 import secrets
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from qulf.crypto import hash_password
 from qulf.exceptions import QulfException
@@ -89,8 +90,39 @@ class OAuthPlugin(QulfPlugin):
                             "Account has no linked User"
                         },
                     )
+
+                if user.deleted_at is not None:
+                    return QulfResponse(
+                        status_code=400,
+                        body={"detail": "User account has been deleted or deactivated"},
+                    )
+
+                expires_at = None
+                if token_res.expires_in:
+                    expires_at = datetime.now(timezone.utc) + timedelta(
+                        seconds=token_res.expires_in
+                    )
+
+                update_data: dict[str, Any] = {
+                    "access_token": token_res.access_token,
+                    "refresh_token": token_res.refresh_token,
+                    "expires_at": expires_at,
+                    "scope": token_res.scope,
+                    "id_token": token_res.id_token,
+                }
+                await self.auth.db.update_account(
+                    provider_id=provider.id,
+                    account_id=profile.id,
+                    update_data=update_data,
+                )
             else:
                 user = await self.auth.db.get_user_by_email(profile.email)
+                if user and user.deleted_at is not None:
+                    return QulfResponse(
+                        status_code=400,
+                        body={"detail": "User account has been deleted or deactivated"},
+                    )
+
                 if not user:
                     random_pass = secrets.token_urlsafe(32)
 

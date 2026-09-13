@@ -156,6 +156,19 @@ class DatabaseAdapter(ABC):
         pass  # pragma: no cover
 
     @abstractmethod
+    async def update_account(
+        self, provider_id: str, account_id: str, update_data: dict[str, Any]
+    ) -> Account | None:
+        """
+        Updates token fields on an existing OAuth account record.
+
+        Only the keys supplied in ``update_data`` are written; unspecified
+        fields are left unchanged.  Returns the updated account or ``None``
+        if no matching record was found.
+        """
+        pass  # pragma: no cover
+
+    @abstractmethod
     async def create_role(self, name: str, description: str | None = None) -> Role:
         pass  # pragma: no cover
 

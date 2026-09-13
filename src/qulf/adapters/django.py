@@ -516,6 +516,19 @@ class DjangoORMAdapter(DatabaseAdapter, SchemaAdapter):
             return None
         return self._to_pydantic_account(db_account)
 
+    async def update_account(
+        self, provider_id: str, account_id: str, update_data: dict[str, Any]
+    ) -> QulfAccountType | None:
+        db_account: Any = await self.account_model.objects.filter(
+            provider_id=provider_id, account_id=account_id
+        ).afirst()
+        if not db_account:
+            return None
+        for field, value in update_data.items():
+            setattr(db_account, field, value)
+        await db_account.asave()
+        return self._to_pydantic_account(db_account)
+
     # RBAC MANAGEMENT
     async def create_role(
         self, name: str, description: str | None = None

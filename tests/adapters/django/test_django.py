@@ -362,6 +362,23 @@ class TestDjangoAccountManagement:
         not_fetched = await django_adapter.get_account_by_provider("github", "wrong_id")
         assert not_fetched is None
 
+        updated = await django_adapter.update_account(
+            "github",
+            "gh_123",
+            {"access_token": "new_access_tok", "refresh_token": "new_refresh_tok"},
+        )
+        assert updated is not None
+        assert updated.access_token == "new_access_tok"
+        assert updated.refresh_token == "new_refresh_tok"
+        assert updated.scope == "read:user"
+
+        assert (
+            await django_adapter.update_account(
+                "github", "wrong_id", {"access_token": "tok"}
+            )
+            is None
+        )
+
 
 class TestDjangoIntegration:
     @pytest.mark.django_db

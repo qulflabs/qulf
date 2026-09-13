@@ -216,6 +216,23 @@ class TestSQLModelAccountManagement:
             is None
         )
 
+        updated = await sqlmodel_adapter.update_account(
+            "github",
+            "gh-12345",
+            {"access_token": "new_access_tok", "refresh_token": "new_refresh_tok"},
+        )
+        assert updated is not None
+        assert updated.access_token == "new_access_tok"
+        assert updated.refresh_token == "new_refresh_tok"
+        assert updated.scope == "read:user"
+
+        assert (
+            await sqlmodel_adapter.update_account(
+                "github", "unknown", {"access_token": "tok"}
+            )
+            is None
+        )
+
 
 class TestSQLModelSchemaInjection:
     @pytest.mark.asyncio

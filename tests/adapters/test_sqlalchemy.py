@@ -215,6 +215,23 @@ class TestSQLAlchemyAccountManagement:
         )
         assert not_fetched is None
 
+        updated = await sqlalchemy_adapter.update_account(
+            "github",
+            "gh_123",
+            {"access_token": "new_access_tok", "refresh_token": "new_refresh_tok"},
+        )
+        assert updated is not None
+        assert updated.access_token == "new_access_tok"
+        assert updated.refresh_token == "new_refresh_tok"
+        assert updated.scope == "read:user"
+
+        assert (
+            await sqlalchemy_adapter.update_account(
+                "github", "wrong_id", {"access_token": "tok"}
+            )
+            is None
+        )
+
 
 class TestSQLAlchemyIntegration:
     @pytest.mark.asyncio

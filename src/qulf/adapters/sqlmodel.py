@@ -438,6 +438,24 @@ class SQLModelAdapter(DatabaseAdapter, SchemaAdapter):
                 return None
             return QulfAccountType.model_validate(self._to_dict(db_account))
 
+    async def update_account(
+        self, provider_id: str, account_id: str, update_data: dict[str, Any]
+    ) -> QulfAccountType | None:
+        async with self.session_maker() as session:
+            stmt = select(self.account_model).where(
+                self.account_model.provider_id == provider_id,
+                self.account_model.account_id == account_id,
+            )
+            result = await session.execute(stmt)
+            db_account = result.scalar_one_or_none()
+            if not db_account:
+                return None
+            for key, value in update_data.items():
+                setattr(db_account, key, value)
+            await session.commit()
+            await session.refresh(db_account)
+            return QulfAccountType.model_validate(self._to_dict(db_account))
+
     # ROlES & PERMISSIONS:
     async def create_role(self, name: str, description: str | None = None) -> Role:
         async with self.session_maker() as session:

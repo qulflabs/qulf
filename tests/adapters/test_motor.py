@@ -196,6 +196,23 @@ class TestMotorAccountManagement:
             await motor_adapter.get_account_by_provider("unknown", "gh-12345") is None
         )
 
+        updated = await motor_adapter.update_account(
+            "github",
+            "gh-12345",
+            {"access_token": "new_access_tok", "refresh_token": "new_refresh_tok"},
+        )
+        assert updated is not None
+        assert updated.access_token == "new_access_tok"
+        assert updated.refresh_token == "new_refresh_tok"
+        assert updated.scope == "read:user"
+
+        assert (
+            await motor_adapter.update_account(
+                "github", "unknown", {"access_token": "tok"}
+            )
+            is None
+        )
+
 
 class TestMotorUserDeletion:
     @pytest.mark.asyncio

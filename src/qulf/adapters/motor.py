@@ -264,6 +264,18 @@ class MotorAdapter(DatabaseAdapter):
             return None
         return self._to_account(doc)
 
+    async def update_account(
+        self, provider_id: str, account_id: str, update_data: dict[str, Any]
+    ) -> QulfAccountType | None:
+        doc = await self.accounts.find_one_and_update(
+            {"provider_id": provider_id, "account_id": account_id},
+            {"$set": dict(update_data)},
+            return_document=True,
+        )
+        if doc is None:
+            return None
+        return self._to_account(doc)
+
     async def create_permission(
         self, name: str, description: str | None = None
     ) -> Permission:

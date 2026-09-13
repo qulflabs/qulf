@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -153,6 +154,16 @@ class MemoryAdapter(DatabaseAdapter):
         for acc in self.accounts.values():
             if acc.provider_id == provider_id and acc.account_id == account_id:
                 return acc
+        return None
+
+    async def update_account(
+        self, provider_id: str, account_id: str, update_data: dict[str, Any]
+    ) -> Account | None:
+        for acc_id, acc in self.accounts.items():
+            if acc.provider_id == provider_id and acc.account_id == account_id:
+                updated = acc.model_copy(update=update_data)
+                self.accounts[acc_id] = updated
+                return updated
         return None
 
     async def get_user_by_email_with_password(self, email: str):

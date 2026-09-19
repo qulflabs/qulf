@@ -1,7 +1,7 @@
 aiosqlite==0.22.1
 annotated-doc==0.0.4
 annotated-types==0.7.0
-anyio==4.13.0
+anyio==4.14.2
 argcomplete==3.6.3
 argon2-cffi==25.1.0
 argon2-cffi-bindings==25.1.0

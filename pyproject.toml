@@ -72,6 +72,13 @@ exclude_also = [
   "@(abc\\.)?abstractmethod",
 ]
 
+[tool.coverage.run]
+omit = [
+  "src/qulf/cli/templates/*",
+  "*/migrations/*",
+  "src/qulf/apps.py",
+]
+
 [dependency-groups]
 dev = [
   "ruff",
@@ -133,6 +140,3 @@ version_scheme = "pep440"
 
 [tool.uv.sources]
 qulf = {workspace = true}
-[tool.qulf]
-app = "src.main:auth"
-models = "models.py"

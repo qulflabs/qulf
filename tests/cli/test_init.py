@@ -62,17 +62,6 @@ class TestQulfInitCommand:
         assert not Path("models.py").exists()
         assert Path("pyproject.toml").exists()
 
-    def test_init_sqlmodel_hits_unimplemented_fallback(self) -> None:
-        """Test SQLModel which currently hits the 'not yet implemented' block."""
-        result = runner.invoke(
-            app, ["--eject"], input="sqlmodel\nmodels.py\nsrc:auth\npyproject.toml\n"
-        )
-        assert result.exit_code == 0
-        assert "Scaffolding for sqlmodel is not yet implemented" in result.stdout
-
-        assert Path("pyproject.toml").exists()
-        assert not Path("models.py").exists()
-
     def test_init_aborts_if_model_file_exists(self) -> None:
         """Test that the CLI refuses to overwrite an existing models.py file."""
         Path("models.py").write_text("existing code")

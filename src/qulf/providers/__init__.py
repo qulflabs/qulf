@@ -11,7 +11,7 @@ __all__ = [
     "DiscordProvider",
     "GitHubProvider",
     "GoogleProvider",
-    "OIDCProvider",
     "OAuthTokenResponse",
     "OAuthUserProfile",
+    "OIDCProvider",
 ]

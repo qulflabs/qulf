@@ -1,12 +1,12 @@
 from datetime import datetime
-from enum import Enum
 from pathlib import Path
 
 import tomlkit
 import typer
 from rich.console import Console
 
-from qulf.cli.templates.scaffold import DJANGO_TEMPLATE, SQLALCHEMY_TEMPLATE
+from qulf.cli.utils import load_model_template
+from qulf.types import ConfigLocation, SupportedORM
 
 ascii_art = """
   █████   █▒   ██  ██▓      █████▒
@@ -22,18 +22,6 @@ ascii_art = """
 
 app = typer.Typer(help="Initialize Qulf configuration and models in your project.")
 console = Console()
-
-
-class SupportedORM(str, Enum):
-    django = "django"
-    sqlalchemy = "sqlalchemy"
-    sqlmodel = "sqlmodel"
-    mongo = "mongo"
-
-
-class ConfigLocation(str, Enum):
-    pyproject = "pyproject.toml"
-    standalone = ".qulf.toml"
 
 
 def _update_or_create_toml(
@@ -118,7 +106,9 @@ def init_project(
     target_models_path: str | None = None
 
     if eject and orm != SupportedORM.mongo:
-        default_path = "models.py" if orm == SupportedORM.django else "src/db/models.py"
+        default_path = (
+            "your_app/models.py" if orm == SupportedORM.django else "src/db/models.py"
+        )
         target_models_path = typer.prompt(
             "Where should we save the models file?",
             default=default_path,
@@ -164,15 +154,19 @@ def init_project(
             "    # (Run `qulf sync` later to inject plugin columns automatically)"
         )
 
-        if orm == SupportedORM.django:
-            content = DJANGO_TEMPLATE.format(
-                timestamp=timestamp, plugin_columns=plugin_columns_str
+        if orm in (
+            SupportedORM.django,
+            SupportedORM.sqlalchemy,
+            SupportedORM.sqlmodel,
+        ):
+            template = load_model_template(orm)
+
+            content = template.format(
+                timestamp=timestamp,
+                plugin_columns=plugin_columns_str,
             )
-        elif orm == SupportedORM.sqlalchemy:
-            content = SQLALCHEMY_TEMPLATE.format(
-                timestamp=timestamp, plugin_columns=plugin_columns_str
-            )
-        else:
+        else:  # pragma: no cover
+            # we will add adapters that might get templates later on
             console.print(
                 f"[bold yellow]Scaffolding for {orm.value} is not yet implemented.[/]"
             )

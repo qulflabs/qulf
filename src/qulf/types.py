@@ -1,3 +1,4 @@
+from enum import Enum
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, model_validator
@@ -151,3 +152,15 @@ class PasskeyCredential(CoreModel):
     public_key: str  # hex-encoded COSE public key bytes
     sign_count: int  # monotonic replay-protection counter
     name: str = "Passkey"  # human-readable label
+
+
+class SupportedORM(str, Enum):
+    django = "django"
+    sqlalchemy = "sqlalchemy"
+    sqlmodel = "sqlmodel"
+    mongo = "mongo"
+
+
+class ConfigLocation(str, Enum):
+    pyproject = "pyproject.toml"
+    standalone = ".qulf.toml"

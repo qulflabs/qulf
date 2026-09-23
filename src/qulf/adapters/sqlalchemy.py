@@ -85,28 +85,6 @@ class SessionMixin:
     )
 
 
-class QulfBase(DeclarativeBase):
-    """Base declarative class for default out-of-the-box Qulf schemas."""
-
-    pass
-
-
-class DefaultUser(QulfBase, UserMixin):
-    """Default User table schema ('user') used if no custom model is supplied."""
-
-    __tablename__ = "users"
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-
-
-class DefaultSession(QulfBase, SessionMixin):
-    """Default Session table schema ('session')
-    used if no custom model is supplied."""
-
-    __tablename__ = "sessions"
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-
-
 class AccountMixin:
     """
     SQLAlchemy column definitions for the Qulf Account model.
@@ -127,6 +105,46 @@ class AccountMixin:
     updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+
+class RoleMixin:
+    name: Mapped[str] = mapped_column(String, unique=True, index=True)
+    description: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class PermissionMixin:
+    name: Mapped[str] = mapped_column(String, unique=True, index=True)
+    description: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class QulfBase(DeclarativeBase):
+    """Base declarative class for default out-of-the-box Qulf schemas."""
+
+    pass
+
+
+class DefaultUser(QulfBase, UserMixin):
+    """Default User table schema ('user') used if no custom model is supplied."""
+
+    __tablename__ = "users"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+
+
+class DefaultSession(QulfBase, SessionMixin):
+    """Default Session table schema ('session')
+    used if no custom model is supplied."""
+
+    __tablename__ = "sessions"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
 
 
 class DefaultAccount(QulfBase, AccountMixin):
@@ -165,24 +183,6 @@ role_permissions = Table(
         primary_key=True,
     ),
 )
-
-
-class RoleMixin:
-    name: Mapped[str] = mapped_column(String, unique=True, index=True)
-    description: Mapped[str | None] = mapped_column(String, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    updated_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-
-
-class PermissionMixin:
-    name: Mapped[str] = mapped_column(String, unique=True, index=True)
-    description: Mapped[str | None] = mapped_column(String, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    updated_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
 
 
 class DefaultRole(QulfBase, RoleMixin):

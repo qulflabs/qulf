@@ -22,6 +22,7 @@ class User(UserMixin):
     class Meta:
         db_table = "users"
 
+
 class Session(SessionMixin):
     id: Any = models.BigAutoField(primary_key=True)
     user: Any = models.ForeignKey(
@@ -30,6 +31,7 @@ class Session(SessionMixin):
 
     class Meta:
         db_table = "sessions"
+
 
 class Account(AccountMixin):
     id: Any = models.BigAutoField(primary_key=True)
@@ -40,17 +42,20 @@ class Account(AccountMixin):
     class Meta:
         db_table = "accounts"
 
+
 class Role(RoleMixin):
     id: Any = models.BigAutoField(primary_key=True)
 
     class Meta:
         db_table = "roles"
 
+
 class Permission(PermissionMixin):
     id: Any = models.BigAutoField(primary_key=True)
 
     class Meta:
         db_table = "permissions"
+
 
 class UserRole(models.Model):
     id: Any = models.BigAutoField(primary_key=True)
@@ -64,6 +69,7 @@ class UserRole(models.Model):
     class Meta:
         db_table = "user_roles"
 
+
 class RolePermission(models.Model):
     id: Any = models.BigAutoField(primary_key=True)
     role: Any = models.ForeignKey(
@@ -75,6 +81,7 @@ class RolePermission(models.Model):
 
     class Meta:
         db_table = "role_permissions"
+
 
 class PasskeyMixin(models.Model):
     """

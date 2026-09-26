@@ -201,7 +201,6 @@ class TestQulfSyncCommand:
         assert "Could not resolve table 'missing_table'" in result.stdout
 
 
-
 class SpecificAuth:
     db = DummyDB()
     plugins = {"specific": SpecificPlugin()}

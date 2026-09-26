@@ -104,6 +104,8 @@ class TestQulfSyncCommand:
 
         Path("models.py").write_text(
             "class User:\n"
+            "    class _meta:\n"
+            "        db_table = 'user'\n"
             "    id = 1\n"
             "    injected_col = 'already exists'\n"
             "    ann_col: str = 'already exists'\n"
@@ -129,7 +131,10 @@ class TestQulfSyncCommand:
         Path(".qulf.toml").write_text(
             "[qulf]\napp = 'dummy_app:auth'\nmodels = 'models.py'\n"
         )
-        Path("models.py").write_text("class User:\n    id = 1\n")
+
+        Path("models.py").write_text(
+            "class User:\n    class _meta:\n        db_table = 'user'\n    id = 1\n"
+        )
 
         sys.modules["dummy_app"].auth.plugins = {"dummy": DummyPlugin()}
 
@@ -141,6 +146,59 @@ class TestQulfSyncCommand:
         content = Path("models.py").read_text()
         assert "injected_col =" in content
         assert "# Injected by dummy:" in content
+
+    def test_sync_resolution_error(self) -> None:
+        Path(".qulf.toml").write_text(
+            "[qulf]\napp = 'dummy_app:auth'\nmodels = 'models.py'\n"
+        )
+        Path("models.py").write_text("invalid python syntax!!!")
+
+        result = runner.invoke(app)
+        assert result.exit_code == 1
+        assert "Error resolving models:" in result.stdout
+
+    def test_sync_missing_table_generic(self) -> None:
+        Path(".qulf.toml").write_text(
+            "[qulf]\napp = 'dummy_app:auth'\nmodels = 'models.py'\n"
+        )
+        Path("models.py").write_text("class Other:\n    pass\n")
+
+        class GenericMissingPlugin:
+            name = "generic_missing"
+
+            def get_custom_columns(self) -> dict:
+                return {"missing_table": {"col": str}}
+
+        sys.modules["dummy_app"].auth.plugins = {
+            "generic_missing": GenericMissingPlugin()
+        }
+
+        result = runner.invoke(app)
+        assert result.exit_code == 1
+        assert "no matching ORM model was found" in result.stdout
+
+    def test_sync_missing_table_specific(self) -> None:
+        Path(".qulf.toml").write_text(
+            "[qulf]\napp = 'dummy_app:auth'\nmodels = 'models.py'\n"
+        )
+        Path("models.py").write_text("class Other:\n    pass\n")
+
+        class SpecificMissingPlugin:
+            name = "specific_missing"
+
+            def get_custom_columns(self) -> dict:
+                return {}
+
+            def get_django_columns(self) -> dict:
+                return {"missing_table": {"col": str}}
+
+        sys.modules["dummy_app"].auth.plugins = {
+            "specific_missing": SpecificMissingPlugin()
+        }
+
+        result = runner.invoke(app)
+        assert result.exit_code == 1
+        assert "Could not resolve table 'missing_table'" in result.stdout
 
 
 class SpecificAuth:
@@ -155,9 +213,15 @@ def test_sync_with_specific_orm_method() -> None:
     )
 
     Path("models.py").write_text(
-        "class User:\n    id = 1\n\nclass Session:\n    id = 1\n"
+        "class User:\n"
+        "    class _meta:\n"
+        "        db_table = 'user'\n"
+        "    id = 1\n\n"
+        "class Session:\n"
+        "    class _meta:\n"
+        "        db_table = 'session'\n"
+        "    id = 1\n"
     )
-
     sys.modules["dummy_app"].auth.plugins = {"specific": SpecificPlugin()}
 
     result = runner.invoke(app)

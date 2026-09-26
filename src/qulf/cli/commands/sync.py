@@ -10,6 +10,9 @@ from rich.console import Console
 from rich.panel import Panel
 
 from qulf.cli import ast_utils
+from qulf.cli.ast_utils import get_required_imports
+from qulf.cli.resolver import resolve_table_to_class_map
+from qulf.exceptions import ModelResolutionError
 
 app = typer.Typer(help="Sync active plugins to your local models.")
 console = Console()
@@ -78,20 +81,41 @@ def sync_models(
 
     auth = _load_qulf_instance(app_path)
     orm_name = getattr(auth.db, "name", "unknown")
+    try:
+        table_to_class = resolve_table_to_class_map(target_file, orm_name)
+    except ModelResolutionError as e:
+        console.print(f"[bold red]Error resolving models:[/] {e}")
+        raise typer.Exit(1)
 
     cst_injections: dict[
         str, dict[str, tuple[cst.BaseExpression, cst.BaseExpression | None, str]]
     ] = {}
+    required_imports: dict[str, set[str]] = {}
 
     for plugin in auth.plugins.values():
         cols = plugin.get_custom_columns()
+
+        # 2. Process generic fallback columns
         for table_name, columns in cols.items():
-            class_name = table_name.capitalize()
+            class_name = table_to_class.get(table_name)
+            if not class_name:
+                console.print(
+                    f"[bold red]Error:[/] Plugin '{plugin.name}' requested columns for "
+                    f"table '{table_name}', but no matching ORM model was found."
+                )
+                raise typer.Exit(1)
+
             if class_name not in cst_injections:
                 cst_injections[class_name] = {}
+
             for col_name, col_type in columns.items():
                 node_tuple = ast_utils.create_fallback_cst_nodes(orm_name, col_type)
                 cst_injections[class_name][col_name] = (*node_tuple, plugin.name)
+
+                # Accumulate missing imports
+                imports_for_type = get_required_imports(orm_name, col_type)
+                for mod, syms in imports_for_type.items():
+                    required_imports.setdefault(mod, set()).update(syms)
 
         specific_method = getattr(plugin, f"get_{orm_name}_columns", None)
         if specific_method:
@@ -103,7 +127,14 @@ def sync_models(
             nodes = ast_utils.extract_nodes_from_source(source)
 
             for table_name, columns in nodes.items():
-                class_name = table_name.capitalize()
+                class_name = table_to_class.get(table_name)
+                if not class_name:
+                    console.print(
+                        "[bold red]Error:[/] "
+                        f"Could not resolve table '{table_name}' ..."
+                    )
+                    raise typer.Exit(1)
+
                 if class_name not in cst_injections:
                     cst_injections[class_name] = {}
                 for col_name, node_tuple in columns.items():
@@ -116,7 +147,9 @@ def sync_models(
     content = target_file.read_text(encoding="utf-8")
     tree = cst.parse_module(content)
 
-    injector = ast_utils.ModelInjector(cst_injections)
+    injector = ast_utils.ModelInjector(
+        cst_injections, required_imports=required_imports
+    )
     modified_tree = tree.visit(injector)
 
     target_file.write_text(modified_tree.code, encoding="utf-8")

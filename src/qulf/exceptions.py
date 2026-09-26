@@ -118,3 +118,9 @@ class RateLimitExceededError(QulfException):
     def __init__(self, message: str, retry_after: int):
         super().__init__(message)
         self.retry_after = retry_after
+
+
+class ModelResolutionError(QulfException):
+    """Raised when a table cannot be resolved to an ORM class."""
+
+    pass

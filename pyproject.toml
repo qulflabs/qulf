@@ -104,6 +104,7 @@ dev = [
   "webauthn>=2.0.0",
   "uvicorn>=0.52.1",
   "pytest-django>=4.14.0",
+  "httpx2>=2.13.1",
 ]
 
 [build-system]

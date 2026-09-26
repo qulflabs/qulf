@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import libcst as cst
 
 
@@ -37,20 +39,37 @@ class ModelInjector(cst.CSTTransformer):
     def __init__(
         self,
         injections: dict[
-            str,
-            dict[
-                str,
-                tuple[
-                    cst.BaseExpression,
-                    cst.BaseExpression | None,
-                    str,
-                ],
-            ],
+            str, dict[str, tuple[cst.BaseExpression, cst.BaseExpression | None, str]]
         ],
+        required_imports: dict[str, set[str]] | None = None,
     ) -> None:
         self.injections = injections
+        # required_imports format: {"sqlalchemy.orm": {"Mapped", "mapped_column"}, ...}
+        self.required_imports = required_imports or {}
+        self.existing_imported_names: set[str] = set()
         self.injected_fields: list[tuple[str, str]] = []
         self.skipped_fields: list[tuple[str, str]] = []
+
+    def visit_Import(self, node: cst.Import) -> None:
+        for alias in node.names:
+            if alias.asname and isinstance(alias.asname.name, cst.Name):
+                self.existing_imported_names.add(alias.asname.name.value)
+            else:
+                # Handle possible dotted paths like 'import foo.bar'
+                curr = alias.name
+                while isinstance(curr, cst.Attribute):
+                    curr = curr.attr
+                if isinstance(curr, cst.Name):
+                    self.existing_imported_names.add(curr.value)
+
+    def visit_ImportFrom(self, node: cst.ImportFrom) -> None:
+        if isinstance(node.names, cst.ImportStar):
+            return
+
+        for alias in node.names:
+            name_node = alias.asname.name if alias.asname else alias.name
+            if isinstance(name_node, cst.Name):
+                self.existing_imported_names.add(name_node.value)
 
     def leave_ClassDef(
         self, original_node: cst.ClassDef, updated_node: cst.ClassDef
@@ -124,6 +143,63 @@ class ModelInjector(cst.CSTTransformer):
         new_body = updated_node.body.with_changes(body=new_statements)
         return updated_node.with_changes(body=new_body)
 
+    def leave_Module(
+        self, original_node: cst.Module, updated_node: cst.Module
+    ) -> cst.Module:
+        new_import_statements = []
+
+        for module_name, symbols in self.required_imports.items():
+            # Only import symbols not already in namespace
+            missing_symbols = [
+                s for s in sorted(symbols) if s not in self.existing_imported_names
+            ]
+            if not missing_symbols:
+                continue
+
+            # Convert module string "sqlalchemy.orm" into CST attribute/name nodes
+            # LibCST helper: cst.parse_module(f"from {module_name} import
+            # {', '.join(missing_symbols)}\n").body[0]
+            stmt = cst.parse_statement(
+                f"from {module_name} import {', '.join(missing_symbols)}"
+            )
+            new_import_statements.append(stmt)
+            # Register newly added symbols
+            self.existing_imported_names.update(missing_symbols)
+
+        if not new_import_statements:
+            return updated_node
+
+        # Find insertion position: after docstring and __future__ statements
+        body_list = list(updated_node.body)
+        insert_idx = 0
+
+        for idx, stmt in enumerate(body_list):
+            # Check for docstring (expression statement containing a string)
+            if idx == 0 and isinstance(stmt, cst.SimpleStatementLine):
+                first_elem = stmt.body[0]
+                if isinstance(first_elem, cst.Expr) and isinstance(
+                    first_elem.value, (cst.SimpleString, cst.ConcatenatedString)
+                ):
+                    insert_idx = 1
+                    continue
+
+            # Check for "from __future__ import ..."
+            if isinstance(stmt, cst.SimpleStatementLine):
+                first_elem = stmt.body[0]
+                if isinstance(first_elem, cst.ImportFrom):
+                    if (
+                        isinstance(first_elem.module, cst.Name)
+                        and first_elem.module.value == "__future__"
+                    ):
+                        insert_idx = idx + 1
+                        continue
+
+            break
+
+        # Splice the new imports into the module body
+        body_list[insert_idx:insert_idx] = new_import_statements
+        return updated_node.with_changes(body=body_list)
+
 
 def extract_nodes_from_source(
     source_code: str,
@@ -182,3 +258,28 @@ def create_fallback_cst_nodes(
             ), cst.parse_expression("datetime | None")
 
     raise ValueError(f"Unsupported fallback type {col_type!r} for ORM {orm_name!r}")
+
+
+def get_required_imports(orm_name: str, col_type: type) -> dict[str, set[str]]:
+    imports: dict[str, set[str]] = {}
+
+    if orm_name == "sqlalchemy":
+        imports.setdefault("sqlalchemy.orm", set()).update({"Mapped", "mapped_column"})
+        if col_type is str:
+            imports.setdefault("sqlalchemy", set()).add("String")
+        elif col_type is bool:
+            imports.setdefault("sqlalchemy", set()).add("Boolean")
+        elif col_type is datetime:
+            imports.setdefault("sqlalchemy", set()).add("DateTime")
+            imports.setdefault("datetime", set()).add("datetime")
+
+    elif orm_name == "sqlmodel":
+        imports.setdefault("sqlmodel", set()).add("Field")
+        if col_type is datetime:
+            imports.setdefault("datetime", set()).add("datetime")
+
+    elif orm_name == "django":
+        # Django fallback expressions use models.CharField, models.BooleanField, etc.
+        imports.setdefault("django.db", set()).add("models")
+
+    return imports

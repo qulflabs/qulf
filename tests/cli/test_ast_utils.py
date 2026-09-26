@@ -8,6 +8,7 @@ from qulf.cli.ast_utils import (
     ModelInjector,
     create_fallback_cst_nodes,
     extract_nodes_from_source,
+    get_required_imports,
 )
 
 
@@ -123,7 +124,12 @@ def test_model_injector_injection_and_grouping() -> None:
     val2 = cst.parse_expression("models.BooleanField()")
     ann1 = cst.parse_expression("Mapped[str]")
 
-    injections = {
+    InjectionMap = dict[
+        str,
+        dict[str, tuple[cst.BaseExpression, cst.BaseExpression | None, str]],
+    ]
+
+    injections: InjectionMap = {
         "User": {
             "existing_field": (val1, None, "plugin_a"),  # Should be skipped (Assign)
             "existing_ann": (val1, None, "plugin_a"),  # Should be skipped (AnnAssign)
@@ -150,3 +156,80 @@ def test_model_injector_injection_and_grouping() -> None:
 
     assert modified_code.count("# Injected by plugin_a") == 1
     assert modified_code.count("# Injected by plugin_b") == 1
+
+
+def test_get_required_imports() -> None:
+    sa_str = get_required_imports("sqlalchemy", str)
+    assert "Mapped" in sa_str["sqlalchemy.orm"]
+    assert "mapped_column" in sa_str["sqlalchemy.orm"]
+    assert "String" in sa_str["sqlalchemy"]
+
+    sa_bool = get_required_imports("sqlalchemy", bool)
+    assert "Boolean" in sa_bool["sqlalchemy"]
+    assert "Mapped" in sa_bool["sqlalchemy.orm"]
+
+    sa_date = get_required_imports("sqlalchemy", datetime)
+    assert "DateTime" in sa_date["sqlalchemy"]
+    assert "datetime" in sa_date["datetime"]
+
+    sm_str = get_required_imports("sqlmodel", str)
+    assert "Field" in sm_str["sqlmodel"]
+
+    sm_date = get_required_imports("sqlmodel", datetime)
+    assert "Field" in sm_date["sqlmodel"]
+    assert "datetime" in sm_date["datetime"]
+
+    dj_str = get_required_imports("django", str)
+    assert "models" in dj_str["django.db"]
+
+    unknown = get_required_imports("unknown", str)
+    assert unknown == {}
+
+
+def test_model_injector_injects_missing_imports() -> None:
+    code = textwrap.dedent('''\
+    """Module docstring."""
+    from __future__ import annotations
+
+    class User:
+        pass
+    ''')
+    tree = cst.parse_module(code)
+    req_imports = {
+        "sqlalchemy.orm": {"Mapped", "mapped_column"},
+        "sqlalchemy": {"String", "Boolean"},
+    }
+    injector = ModelInjector(injections={}, required_imports=req_imports)
+    modified = tree.visit(injector)
+    output = modified.code
+
+    lines = output.splitlines()
+    # Must preserve docstring and __future__ before new imports
+    assert lines[0] == '"""Module docstring."""'
+    assert lines[1] == "from __future__ import annotations"
+    assert "from sqlalchemy import Boolean, String" in output
+    assert "from sqlalchemy.orm import Mapped, mapped_column" in output
+
+
+def test_model_injector_skips_existing_imports_and_aliases() -> None:
+    code = textwrap.dedent("""\
+    import datetime as dt
+    import os.path
+    from sqlalchemy.orm import Mapped
+    from module import *
+
+    class User:
+        pass
+    """)
+    tree = cst.parse_module(code)
+    req_imports = {
+        "sqlalchemy.orm": {"Mapped", "mapped_column"},
+        "datetime": {"dt"},
+    }
+    injector = ModelInjector(injections={}, required_imports=req_imports)
+    modified = tree.visit(injector)
+    output = modified.code
+
+    # Mapped and dt are already imported; only mapped_column must be injected
+    assert "from sqlalchemy.orm import mapped_column" in output
+    assert output.count("Mapped") == 1

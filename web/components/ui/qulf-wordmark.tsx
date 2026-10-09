@@ -23,11 +23,11 @@ const QulfWordMark = ({
         className={`flex items-center justify-center rounded-md select-none ${iconClassName}`}
       >
         {" "}
-        <QulfLogoIcon width={iconSize} height={iconSize} />{" "}
+        <QulfLogoIcon width={iconSize} height={iconSize} className="text-black dark:text-white" />{" "}
       </div>{" "}
       {showText && (
         <span
-          className={`${textSize} font-bold tracking-tight text-white ${textClassName}`}
+          className={`${textSize} font-bold tracking-tight ${textClassName}`}
         >
           {" "}
           QULF{" "}

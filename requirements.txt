@@ -6,7 +6,7 @@ argcomplete==3.6.3
 argon2-cffi==25.1.0
 argon2-cffi-bindings==25.1.0
 brevo-python==5.0.1
-certifi==2026.5.20
+certifi==2026.10.19
 cffi==2.0.0
 cfgv==3.5.0
 charset-normalizer==3.4.9

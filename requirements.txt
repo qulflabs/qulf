@@ -52,6 +52,6 @@ tomlkit==0.15.0
 typing-extensions==4.15.0
 typing-inspection==0.4.2
 uvicorn==0.48.0
-virtualenv==21.7.13
+virtualenv==21.14.13
 wcwidth==0.8.2
 wrapt==2.2.2

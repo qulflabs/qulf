@@ -208,7 +208,7 @@ run = [
   "git fetch upstream",
   "git switch main",
   "git reset --hard upstream/main",
-  "git push origin main",
+  "git push origin main --force-with-lease"
 ]
 
 [tasks.start]

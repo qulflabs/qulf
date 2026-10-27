@@ -45,6 +45,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: lint-typecheck-build
 
+    env:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
     strategy:
       fail-fast: false
       matrix:
@@ -84,19 +87,19 @@ jobs:
             -o junit_family=legacy
 
       - name: Upload coverage to Codecov
-        if: matrix.python-version == '3.14' && secrets.CODECOV_TOKEN != '' && github.actor != 'dependabot[bot]'
+        if: matrix.python-version == '3.14' && env.CODECOV_TOKEN != '' && github.actor != 'dependabot[bot]'
         uses: codecov/codecov-action@v5
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
+          token: ${{ env.CODECOV_TOKEN }}
           files: ./coverage.xml
           flags: unittests
           fail_ci_if_error: true
 
       - name: Upload test results to Codecov
-        if: ${{ !cancelled() && matrix.python-version == '3.14' && secrets.CODECOV_TOKEN != '' && github.actor != 'dependabot[bot]' }}
+        if: !cancelled() && matrix.python-version == '3.14' && env.CODECOV_TOKEN != '' && github.actor != 'dependabot[bot]'
         uses: codecov/codecov-action@v5
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
+          token: ${{ env.CODECOV_TOKEN }}
           files: ./junit.xml
           report_type: test_results
           fail_ci_if_error: true

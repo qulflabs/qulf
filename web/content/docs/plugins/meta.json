@@ -1,4 +1,12 @@
 {
-  "pages": ["index", "magic-link", "oauth", "passkey", "totp", "custom"],
+  "pages": [
+    "index",
+    "magic-link",
+    "oauth",
+    "passkey",
+    "totp",
+    "session",
+    "custom"
+  ],
   "icon": "Plug"
 }

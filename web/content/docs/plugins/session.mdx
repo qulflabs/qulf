@@ -1,0 +1,239 @@
+---
+title: Session Management
+description: Expose session listing and revocation endpoints to your users with the SessionManagementPlugin.
+---
+
+# Session Management Plugin
+
+The Session Management plugin gives users visibility and control over their active sessions across all devices. Once mounted, it exposes three ready-to-use HTTP endpoints for listing, revoking individual, and revoking all other sessions — with the active session always preserved.
+
+<Callout type="info">
+  This plugin is most useful when using the **database session strategy** (the default). With JWT sessions, individual revocation is not possible since tokens are stateless.
+  See [Sessions](/docs/sessions) for strategy details.
+</Callout>
+
+## Configuration
+
+Import `SessionManagementPlugin` and add it to your `plugins` list. No additional options are required.
+
+```python title="app/auth.py"
+from qulf.core import Qulf, QulfConfig
+from qulf.plugins.session import SessionManagementPlugin
+from app.db import db_adapter  # Your database adapter
+
+auth = Qulf(
+    db=db_adapter,
+    config=QulfConfig(secret_key="your-32-char-secret-key-here!!!"),
+    plugins=[
+        SessionManagementPlugin()
+    ]
+)
+```
+
+The plugin automatically registers its routes when you mount the Qulf router in your framework adapter.
+
+## Endpoints
+
+All paths below are **relative** to wherever you mount the Qulf router in your framework (e.g., if mounted at `/api/auth`, the full path becomes `/api/auth/session/list`).
+
+All endpoints require an **active session cookie**. Requests without a valid session cookie return `401 Unauthorized`.
+
+---
+
+### `GET /session/list`
+
+Returns all active sessions for the currently authenticated user.
+
+**Authentication:** Requires a valid session cookie.
+
+**Response `200 OK`:**
+```json
+{
+  "sessions": [
+    {
+      "id": "abc123",
+      "user_id": "user_456",
+      "ip_address": "192.168.1.1",
+      "user_agent": "Mozilla/5.0 ...",
+      "created_at": "2024-01-15T10:00:00Z",
+      "expires_at": "2024-01-22T10:00:00Z"
+    }
+  ]
+}
+```
+
+<Callout type="info">
+  Session `token` values are **never included** in the response. They are stripped via Pydantic's `model_dump(exclude={"token"})` before the data is sent to the client, preventing secret leakage.
+</Callout>
+
+**Error responses:**
+
+| Status | Body | Reason |
+|--------|------|--------|
+| `401` | `{"detail": "Session token missing."}` | No session cookie in request |
+| `401` | `{"detail": "Invalid or expired session."}` | Cookie present but token is invalid |
+
+---
+
+### `POST /session/revoke`
+
+Revokes a specific session by its token. Useful for a "Sign out of this device" flow in a session management UI.
+
+**Authentication:** Requires a valid session cookie.
+
+**Request body:**
+```json
+{
+  "token": "the_session_token_to_revoke"
+}
+```
+
+**Response `200 OK`:**
+```json
+{
+  "detail": "Session successfully revoked.",
+  "revoked": true
+}
+```
+
+**Error responses:**
+
+| Status | Body | Reason |
+|--------|------|--------|
+| `400` | `{"detail": "Invalid request body: ..."}` | Missing or malformed `token` field |
+| `401` | `{"detail": "Session token missing."}` | No session cookie in request |
+| `401` | `{"detail": "Invalid or expired session."}` | Cookie present but token is invalid |
+| `404` | `{"detail": "Session not found or already revoked."}` | Token not found for this user |
+
+---
+
+### `POST /session/revoke-all`
+
+Revokes all sessions for the current user **except the caller's active session**. Useful for a "Sign out of all other devices" feature.
+
+**Authentication:** Requires a valid session cookie.
+
+**Request body:** None required.
+
+**Response `200 OK`:**
+```json
+{
+  "detail": "Other sessions successfully revoked.",
+  "revoked_count": 2
+}
+```
+
+`revoked_count` is the number of sessions that were terminated. The caller's current session is always preserved.
+
+**Error responses:**
+
+| Status | Body | Reason |
+|--------|------|--------|
+| `401` | `{"detail": "Session token missing."}` | No session cookie in request |
+| `401` | `{"detail": "Invalid or expired session."}` | Cookie present but token is invalid |
+
+---
+
+## Usage Example
+
+Here is how you would build a session management UI in your frontend.
+
+### 1. Display active sessions
+
+Fetch and display all active sessions when the user visits their account security page.
+
+```javascript title="frontend/security-settings.js"
+// Assumes the auth router is mounted at /api/auth
+const response = await fetch('/api/auth/session/list', {
+  credentials: 'include' // Required to send the session cookie
+});
+const { sessions } = await response.json();
+
+// Render each session to the user
+sessions.forEach(session => {
+  console.log(`Session from IP: ${session.ip_address}`);
+  console.log(`Device: ${session.user_agent}`);
+  console.log(`Expires: ${session.expires_at}`);
+});
+```
+
+### 2. Revoke a specific session
+
+Allow users to terminate a specific device session (e.g., an old phone they no longer use).
+
+```javascript title="frontend/security-settings.js"
+async function revokeSession(sessionToken) {
+  const response = await fetch('/api/auth/session/revoke', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: sessionToken })
+  });
+
+  if (response.ok) {
+    console.log('Session revoked successfully.');
+    // Refresh the session list in the UI
+  }
+}
+```
+
+### 3. Sign out of all other devices
+
+A common security action after a password change or suspected account compromise.
+
+```javascript title="frontend/security-settings.js"
+async function revokeAllOtherSessions() {
+  const response = await fetch('/api/auth/session/revoke-all', {
+    method: 'POST',
+    credentials: 'include'
+  });
+
+  const { revoked_count } = await response.json();
+  console.log(`Signed out of ${revoked_count} other device(s).`);
+}
+```
+
+---
+
+## API Reference
+
+### `SessionManagementPlugin`
+
+```python
+from qulf.plugins.session import SessionManagementPlugin
+
+class SessionManagementPlugin(QulfPlugin):
+    name = "session_management"
+```
+
+A `QulfPlugin` subclass that injects session management routes into the Qulf router. It has no constructor arguments.
+
+| Attribute | Value |
+|-----------|-------|
+| `name` | `"session_management"` |
+| Routes exposed | `GET /session/list`, `POST /session/revoke`, `POST /session/revoke-all` |
+
+---
+
+### `RevokeSessionRequest`
+
+```python
+from qulf.plugins.session import RevokeSessionRequest
+
+class RevokeSessionRequest(BaseModel):
+    token: str
+```
+
+A Pydantic model used to validate the request body for `POST /session/revoke`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `token` | `str` | The session token of the session to revoke. |
+
+---
+
+## See Also
+
+- [Sessions](/docs/sessions) — Learn about database vs. JWT session strategies and programmatic session management.
+- [Custom Plugins](/docs/plugins/custom) — Build your own plugin using the same `QulfPlugin` base class.
+- [API Reference](/docs/api-reference) — Full core engine method reference.

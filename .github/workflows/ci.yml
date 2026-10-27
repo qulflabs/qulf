@@ -96,7 +96,7 @@ jobs:
           fail_ci_if_error: true
 
       - name: Upload test results to Codecov
-        if: !cancelled() && matrix.python-version == '3.14' && env.CODECOV_TOKEN != '' && github.actor != 'dependabot[bot]'
+        if: ${{ !cancelled() && matrix.python-version == '3.14' && env.CODECOV_TOKEN != '' && github.actor != 'dependabot[bot]' }}
         uses: codecov/codecov-action@v5
         with:
           token: ${{ env.CODECOV_TOKEN }}

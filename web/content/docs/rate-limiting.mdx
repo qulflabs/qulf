@@ -100,3 +100,230 @@ auth = Qulf(
 ## Custom Rate Limiting
 
 The plugin exposes an `enforce(action, identifier, tokens=1)` method. You can retrieve the plugin instance and call this inside any of your custom framework routes to rate limit other critical endpoints (like password resets or API calls).
+
+---
+
+## Configuration Reference
+
+All config classes are Pydantic models and can be imported from `qulf.rate_limit`.
+
+### `FixedWindowConfig`
+
+```python
+from qulf.rate_limit import FixedWindowConfig
+
+FixedWindowConfig(
+    max_requests=10,
+    window_seconds=60,
+    max_memory_keys=10000,           # optional
+    key_prefix="qulf:ratelimit:fw:"  # optional
+)
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `max_requests` | `int` | ✅ | — | Maximum allowed requests per window. Must be `> 0`. |
+| `window_seconds` | `int` | ✅ | — | Size of the fixed time window in seconds. Must be `> 0`. |
+| `max_memory_keys` | `int` | | `10000` | Max unique keys held in memory before a pruning pass is triggered. |
+| `key_prefix` | `str` | | `"qulf:ratelimit:fw:"` | Redis key prefix for `RedisFixedWindow`. |
+
+---
+
+### `SlidingWindowConfig`
+
+```python
+from qulf.rate_limit import SlidingWindowConfig
+
+SlidingWindowConfig(
+    max_requests=10,
+    window_seconds=60.0,
+    max_memory_keys=10000,            # optional
+    key_prefix="qulf:ratelimit:swl:"  # optional
+)
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `max_requests` | `int` | ✅ | — | Maximum allowed requests in the sliding window. Must be `> 0`. |
+| `window_seconds` | `float` | ✅ | — | Size of the sliding window in seconds. Accepts decimals (e.g., `0.5`). Must be `> 0`. |
+| `max_memory_keys` | `int` | | `10000` | Max unique keys held in memory before a pruning pass is triggered. |
+| `key_prefix` | `str` | | `"qulf:ratelimit:swl:"` | Redis key prefix for `RedisSlidingWindowLog`. |
+
+---
+
+### `TokenBucketConfig`
+
+```python
+from qulf.rate_limit import TokenBucketConfig
+
+TokenBucketConfig(
+    capacity=20,
+    refill_rate=0.5,
+    max_memory_keys=10000,           # optional
+    key_prefix="qulf:ratelimit:tb:"  # optional
+)
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `capacity` | `int` | ✅ | — | Maximum tokens the bucket can hold (the allowed burst size). Must be `> 0`. |
+| `refill_rate` | `float` | ✅ | — | Tokens added to the bucket **per second**. `0.5` = 1 token every 2 seconds. Must be `> 0`. |
+| `max_memory_keys` | `int` | | `10000` | Max unique buckets held in memory before a pruning pass is triggered. |
+| `key_prefix` | `str` | | `"qulf:ratelimit:tb:"` | Redis key prefix for `RedisTokenBucket`. |
+
+---
+
+## Implementations Reference
+
+All implementations can be imported directly from `qulf.rate_limit`.
+
+### In-Memory Implementations
+
+In-memory limiters are ideal for **single-process** applications. They require no external dependencies, but state is not shared between workers or server instances.
+
+#### `InMemoryFixedWindow`
+
+```python
+from qulf.rate_limit import InMemoryFixedWindow, FixedWindowConfig
+
+limiter = InMemoryFixedWindow(config=FixedWindowConfig(max_requests=5, window_seconds=60))
+```
+
+Divides time into discrete fixed-size windows. When a new window starts, the counter resets. Per-key `asyncio.Lock` ensures correctness under concurrent async loads. A global lock guards the shared `_windows` dictionary during pruning.
+
+#### `InMemorySlidingWindowLog`
+
+```python
+from qulf.rate_limit import InMemorySlidingWindowLog, SlidingWindowConfig
+
+limiter = InMemorySlidingWindowLog(config=SlidingWindowConfig(max_requests=10, window_seconds=60))
+```
+
+Keeps a `deque` of exact request timestamps per key. On every `consume()` call, timestamps older than `window_seconds` are purged from the left. Most accurate algorithm, at the cost of higher memory usage proportional to traffic volume.
+
+#### `InMemoryTokenBucket`
+
+```python
+from qulf.rate_limit import InMemoryTokenBucket, TokenBucketConfig
+
+limiter = InMemoryTokenBucket(config=TokenBucketConfig(capacity=20, refill_rate=0.5))
+```
+
+Each key gets an independent bucket. On every `consume()`, elapsed time is calculated and tokens are refilled proportionally (`elapsed * refill_rate`), capped at `capacity`. Allows controlled bursting while enforcing a smooth long-term average rate.
+
+---
+
+### Redis-Backed Implementations
+
+Redis implementations are required for **multi-worker or multi-server** deployments where rate limit state must be shared globally. All Redis operations run as **atomic Lua scripts**, guaranteeing race-condition-free counting.
+
+All Redis limiters require an async-compatible client as their first argument. Use `redis.asyncio` from the [`redis`](https://github.com/redis/redis-py) package.
+
+#### `RedisFixedWindow`
+
+```python
+import redis.asyncio as redis
+from qulf.rate_limit import RedisFixedWindow, FixedWindowConfig
+
+redis_client = redis.from_url("redis://localhost:6379/0")
+limiter = RedisFixedWindow(
+    redis_client=redis_client,
+    config=FixedWindowConfig(max_requests=5, window_seconds=60)
+)
+```
+
+Uses a single Redis key per `(identifier, window_start)` pair. A Lua script atomically increments the counter and sets the TTL on the first request. The key auto-expires when the window ends — no manual cleanup needed.
+
+#### `RedisSlidingWindowLog`
+
+```python
+import redis.asyncio as redis
+from qulf.rate_limit import RedisSlidingWindowLog, SlidingWindowConfig
+
+redis_client = redis.from_url("redis://localhost:6379/0")
+limiter = RedisSlidingWindowLog(
+    redis_client=redis_client,
+    config=SlidingWindowConfig(max_requests=10, window_seconds=60)
+)
+```
+
+Uses a Redis **Sorted Set** per key, where members are unique UUIDs and scores are Unix timestamps. A Lua script atomically removes expired members (`ZREMRANGEBYSCORE`), checks the current count, and adds the new request. The key TTL is refreshed on every write.
+
+#### `RedisTokenBucket`
+
+```python
+import redis.asyncio as redis
+from qulf.rate_limit import RedisTokenBucket, TokenBucketConfig
+
+redis_client = redis.from_url("redis://localhost:6379/0")
+limiter = RedisTokenBucket(
+    redis_client=redis_client,
+    config=TokenBucketConfig(capacity=20, refill_rate=0.5)
+)
+```
+
+Uses a Redis **Hash Map** per key storing `tokens` and `last_refill`. A Lua script atomically reads both fields, computes the refill amount from elapsed time, applies the token consumption, and writes the updated state back. The key TTL is set to the full refill time (`capacity / refill_rate` seconds).
+
+---
+
+## Abstract Base Class: `BaseRateLimiter`
+
+```python
+from qulf.rate_limit import BaseRateLimiter, RateLimitResult
+from abc import ABC, abstractmethod
+
+class BaseRateLimiter(ABC):
+    @abstractmethod
+    async def consume(self, key: str, tokens: int = 1) -> RateLimitResult:
+        ...
+```
+
+The abstract contract that all Qulf rate limiters implement. To build a custom limiter (e.g., backed by DynamoDB or Memcached), subclass `BaseRateLimiter` and implement `consume()`.
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `consume` | `async (key: str, tokens: int = 1) -> RateLimitResult` | Consume `tokens` for the given `key`. Returns a `RateLimitResult`. |
+
+**Example — custom limiter:**
+
+```python title="app/my_limiter.py"
+from qulf.rate_limit import BaseRateLimiter, RateLimitResult
+
+class MyCustomLimiter(BaseRateLimiter):
+    async def consume(self, key: str, tokens: int = 1) -> RateLimitResult:
+        # Your custom storage/counting logic here
+        allowed = True  # Replace with real check
+        return RateLimitResult(allowed=allowed, remaining=9, reset_in=30.0)
+```
+
+---
+
+## `RateLimitResult`
+
+```python
+from qulf.rate_limit import RateLimitResult
+```
+
+A Pydantic model returned by every `consume()` call. Inspect it when calling `enforce()` manually from a custom route.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `allowed` | `bool` | `True` if the request was permitted; `False` if rate-limited. |
+| `remaining` | `int` | Requests or tokens remaining in the current window/bucket. |
+| `reset_in` | `float` | Seconds until the limit resets or a new token becomes available. |
+
+---
+
+## Memory Management
+
+All in-memory implementations guard against unbounded memory growth via the `max_memory_keys` setting in each config class.
+
+When the tracked key count reaches `max_memory_keys`, a **pruning pass** runs automatically before a new key is inserted. The strategy differs per algorithm:
+
+| Implementation | Pruning Strategy |
+|----------------|-----------------|
+| `InMemoryFixedWindow` | Removes keys whose recorded window start is earlier than the current window start. |
+| `InMemorySlidingWindowLog` | Removes keys with an empty timestamp deque, or whose most recent request is older than `window_seconds`. |
+| `InMemoryTokenBucket` | Removes buckets idle long enough to have fully refilled (`capacity / refill_rate` seconds since last activity). |
+
+Redis implementations do not need `max_memory_keys` — Redis automatically expires keys via the TTLs set on every write operation.

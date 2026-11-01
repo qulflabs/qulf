@@ -127,7 +127,6 @@ await auth.revoke_all_user_sessions(
     except_token=current_token
 )
 ```
-
 ---
 
 ## Account Management & Recovery
@@ -170,10 +169,6 @@ Enforces that a user has a specific role. Raises an `AuthorizationError` if they
 
 ### `require_permission(user: User, permission_name: str) -> None`
 Enforces that a user has a specific permission. Raises an `AuthorizationError` if they do not.
-
----
-
----
 
 ---
 
@@ -302,12 +297,246 @@ Route dependency or decorator verifying user permission access:
 
 ## Plugin Development & Lifecycle Hooks (`QulfPlugin`)
 
-Custom plugins inherit from `QulfPlugin` (`qulf.plugins.base.QulfPlugin`) to hook into authentication events or inject dynamic DB schema columns:
+Custom plugins extend Qulf by inheriting from `QulfPlugin` (importable from `qulf.plugins`). Plugins can hook into authentication events, mount custom framework routes, and dynamically inject database columns into your ORM models.
 
-*   **`setup(auth: Qulf)`**: Invoked during `Qulf` initialization to store engine instance.
-*   **`get_custom_columns() -> dict[str, dict[str, Any]]`**: Defines custom database fields to be injected into target tables.
-*   **`before_user_create(user_data: UserCreate) -> UserCreate`**: Lifecycle hook executed before `sign_up` persists the user.
-*   **`after_user_create(user: User) -> None`**: Executed immediately after user registration succeeds.
-*   **`before_sign_in(email: str, ip_address: str | None) -> None`**: Executed prior to credential validation (useful for rate limiting or security audits).
-*   **`after_sign_in(user: User, session: Session) -> None`**: Executed after sign-in succeeds and session is issued.
+```python
+from qulf.plugins import QulfPlugin
+from qulf.exceptions import ConfigurationError
+from qulf.routing import QulfRoute, QulfRequest, QulfResponse
+from qulf.types import Session, User, UserCreate
+```
+
+### Plugin State & `self.auth`
+
+Every plugin class defines a unique `name: str` and has access to the parent `Qulf` engine via the `auth` property.
+
+```python
+class MyPlugin(QulfPlugin):
+    name = "my_plugin"
+```
+
+#### `auth` Property & `ConfigurationError`
+
+The `auth` property provides strict typing for IDE autocomplete and safeguards against uninitialized access:
+
+```python
+@property
+def auth(self) -> "Qulf":
+```
+
+*   `self.auth` is set automatically when you register the plugin in `Qulf(plugins=[MyPlugin()])`.
+*   If you attempt to access `self.auth` before `setup()` has been invoked by the engine, a `ConfigurationError` is raised:
+    ```python
+    ConfigurationError: Plugin `my_plugin` has not been initialized by Qulf.
+    ```
+
+---
+
+### Hook Signatures & Reference
+
+#### `setup(self, auth: Qulf) -> None`
+Called synchronously during `Qulf.__init__()` when the engine is instantiated.
+
+```python
+def setup(self, auth: "Qulf") -> None:
+```
+
+*   **Parameters**:
+    *   `auth`: The central `Qulf` engine instance.
+*   **Behavior**: Assigns `self.auth = auth`. Override this if your plugin needs to validate configurations, subscribe to external event emitters, or initialize internal clients. Always call `super().setup(auth)` if overriding.
+
+---
+
+#### `get_custom_columns(self) -> dict[str, dict[str, type]]`
+Defines generic custom database columns to inject into tables (e.g. `user`, `session`).
+
+```python
+def get_custom_columns(self) -> dict[str, dict[str, type]]:
+```
+
+*   **Returns**: A nested dictionary mapping `{table_name: {column_name: python_type}}`. Supported standard Python types include `str`, `int`, `bool`, and `datetime`.
+*   **Behavior**: During engine boot, Qulf passes these fields to the active database adapter's schema injector (`SchemaAdapter.inject_custom_columns()`), which dynamically creates corresponding ORM fields:
+    ```python
+    def get_custom_columns(self) -> dict[str, dict[str, type]]:
+        return {
+            "user": {
+                "two_factor_enabled": bool,
+                "two_factor_secret": str,
+            }
+        }
+    ```
+
+---
+
+#### `get_{orm}_columns(self) -> dict[str, dict[str, Any]]` (ORM-Specific Hook)
+Optional hook pattern allowing plugins to define native ORM column constructs rather than generic Python types.
+
+```python
+def get_sqlalchemy_columns(self) -> dict[str, dict[str, Any]]: ...
+def get_sqlmodel_columns(self) -> dict[str, dict[str, Any]]: ...
+def get_django_columns(self) -> dict[str, dict[str, Any]]: ...
+```
+
+*   **Naming Convention**: The method name must match `get_{adapter_name}_columns`, where `{adapter_name}` corresponds to `auth.db.name` (e.g., `sqlalchemy`, `sqlmodel`, `django`).
+*   **Precedence & Deep Merging**: If defined, Qulf calls this method and deep-merges its column definitions over any fields returned by `get_custom_columns()`. This provides an escape hatch to declare native attributes, such as indexes, foreign keys, column constraints, nullable flags, or custom column types:
+    ```python
+    def get_sqlalchemy_columns(self) -> dict[str, dict[str, Any]]:
+        from sqlalchemy import Boolean, String, mapped_column
+
+        return {
+            "user": {
+                "is_verified": mapped_column(Boolean, default=False, index=True),
+                "verification_code": mapped_column(String(64), nullable=True),
+            }
+        }
+    ```
+*   **CLI Sync Support**: The `qulf sync` CLI command inspects both `get_custom_columns()` and `get_{orm}_columns()` via AST parsing to generate and update static model files automatically.
+
+---
+
+#### `get_routes(self) -> list[QulfRoute]`
+Defines framework-agnostic HTTP endpoints mounted under the framework application router.
+
+```python
+def get_routes(self) -> list[QulfRoute]:
+```
+
+*   **Returns**: A list of `QulfRoute` definitions.
+*   **Built-in RBAC**: Each `QulfRoute` accepts optional `require_roles` and `require_permissions` parameters, which framework integrations automatically enforce before the route handler is invoked:
+    ```python
+    def get_routes(self) -> list[QulfRoute]:
+        async def verify_handler(request: QulfRequest) -> QulfResponse:
+            return QulfResponse(status_code=200, body={"status": "verified"})
+
+        return [
+            QulfRoute(
+                path="/verify-status",
+                methods=["GET"],
+                handler=verify_handler,
+                require_roles=["user"],
+            )
+        ]
+    ```
+
+---
+
+#### `async def before_user_create(self, user_data: UserCreate) -> UserCreate`
+Asynchronous lifecycle hook executed during `sign_up()` **before** persisting the user record to the database.
+
+```python
+async def before_user_create(self, user_data: UserCreate) -> UserCreate:
+```
+
+*   **Parameters**:
+    *   `user_data`: `UserCreate` instance containing registration fields (`email`, `password`, `name`, `username`, and extra plugin fields).
+*   **Returns**: The (potentially mutated) `UserCreate` object passed along to subsequent plugins and the database adapter.
+*   **Usage**: Validate fields (e.g. email domain whitelist), sanitize strings, normalize usernames, or reject unauthorized registrations by raising a `QulfException`.
+
+---
+
+#### `async def after_user_create(self, user: User) -> None`
+Asynchronous lifecycle hook executed immediately **after** user registration has been successfully committed.
+
+```python
+async def after_user_create(self, user: User) -> None:
+```
+
+*   **Parameters**:
+    *   `user`: The newly created `User` model instance returned from the database adapter.
+*   **Usage**: Send verification emails, dispatch welcome webhooks, initialize customer IDs in third-party services (e.g. Stripe), or create initial profile entries.
+
+---
+
+#### `async def before_sign_in(self, email: str, ip_address: str | None = None) -> None`
+Asynchronous lifecycle hook executed during `sign_in()` **before** credentials are authenticated.
+
+```python
+async def before_sign_in(self, email: str, ip_address: str | None = None) -> None:
+```
+
+*   **Parameters**:
+    *   `email`: Email string entered by the user.
+    *   `ip_address`: Optional client IP address passed to `auth.sign_in()`.
+*   **Usage**: Check rate limits, evaluate IP geofencing/blacklists, or audit incoming sign-in attempts. Raising an exception aborts the login process before password hashing is evaluated.
+
+---
+
+#### `async def after_sign_in(self, user: User, session: Session) -> None`
+Asynchronous lifecycle hook executed immediately **after** password verification succeeds and an active session is issued.
+
+```python
+async def after_sign_in(self, user: User, session: Session) -> None:
+```
+
+*   **Parameters**:
+    *   `user`: The authenticated `User` record.
+    *   `session`: The active `Session` record created for this authentication.
+*   **Usage**: Enforce secondary authentication factors (such as TOTP 2FA by deleting the active session and raising `Requires2FAError`), log successful sign-in timestamps, or sync audit trails.
+
+---
+
+### Complete Plugin Implementation Example
+
+```python title="app/plugins/security.py"
+from datetime import datetime, timezone
+from typing import Any
+from qulf.exceptions import ConfigurationError, QulfException
+from qulf.plugins.base import QulfPlugin
+from qulf.routing import QulfRequest, QulfResponse, QulfRoute
+from qulf.types import Session, User, UserCreate
+
+class SecurityAuditPlugin(QulfPlugin):
+    name = "security_audit"
+
+    def setup(self, auth) -> None:
+        super().setup(auth)
+        # self.auth is now accessible without raising ConfigurationError
+
+    def get_custom_columns(self) -> dict[str, dict[str, type]]:
+        return {
+            "user": {
+                "failed_login_count": int,
+                "last_security_check": datetime,
+            }
+        }
+
+    def get_sqlalchemy_columns(self) -> dict[str, dict[str, Any]]:
+        # Native SQLAlchemy definitions take precedence
+        from sqlalchemy import DateTime, Integer, mapped_column
+
+        return {
+            "user": {
+                "failed_login_count": mapped_column(Integer, default=0),
+                "last_security_check": mapped_column(DateTime(timezone=True), nullable=True),
+            }
+        }
+
+    def get_routes(self) -> list[QulfRoute]:
+        async def security_status(request: QulfRequest) -> QulfResponse:
+            return QulfResponse(status_code=200, body={"status": "healthy"})
+
+        return [
+            QulfRoute(
+                path="/security/status",
+                methods=["GET"],
+                handler=security_status,
+                require_roles=["admin"],
+            )
+        ]
+
+    async def before_user_create(self, user_data: UserCreate) -> UserCreate:
+        if user_data.email.endswith("@blocked-domain.com"):
+            raise QulfException("Sign-up is not allowed for this domain.")
+        return user_data
+
+    async def after_user_create(self, user: User) -> None:
+        print(f"Audit: New user created: {user.email}")
+
+    async def before_sign_in(self, email: str, ip_address: str | None = None) -> None:
+        print(f"Audit: Sign-in attempt for {email} from IP {ip_address}")
+
+    async def after_sign_in(self, user: User, session: Session) -> None:
+        print(f"Audit: User {user.id} signed in with session {session.token[:8]}...")
+```
+
 

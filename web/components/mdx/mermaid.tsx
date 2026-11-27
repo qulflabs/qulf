@@ -1,56 +1,98 @@
-'use client';
+"use client";
 
-import { use, useId, useSyncExternalStore } from 'react';
-import { useTheme } from 'next-themes';
+import mermaid from "mermaid";
+import { useTheme } from "next-themes";
+import { useEffect, useId, useRef } from "react";
 
-export function Mermaid({ chart }: { chart: string }) {
-    // `false` on the server and during hydration
-    const isClient = useSyncExternalStore(
-        () => () => { },
-        () => true,
-        () => false,
-    );
-
-    if (!isClient) return;
-    return <MermaidContent chart={chart} />;
+interface MermaidProps {
+  chart: string;
 }
 
-const cache = new Map<string, Promise<unknown>>();
+export function Mermaid({ chart }: MermaidProps) {
+  const id = useId().replace(/:/g, "");
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { resolvedTheme } = useTheme();
 
-function cachePromise<T>(key: string, setPromise: () => Promise<T>): Promise<T> {
-    const cached = cache.get(key);
-    if (cached) return cached as Promise<T>;
+  useEffect(() => {
+    let cancelled = false;
 
-    const promise = setPromise();
-    cache.set(key, promise);
-    return promise;
-}
+    async function render() {
+      const dark = resolvedTheme === "dark";
 
-function MermaidContent({ chart }: { chart: string }) {
-    const id = useId();
-    const { resolvedTheme } = useTheme();
-    const { default: mermaid } = use(cachePromise('mermaid', () => import('mermaid')));
-
-    mermaid.initialize({
+      mermaid.initialize({
         startOnLoad: false,
-        securityLevel: 'loose',
-        fontFamily: 'inherit',
-        themeCSS: 'margin: 1.5rem auto 0;',
-        theme: resolvedTheme === 'dark' ? 'dark' : 'default',
-    });
+        securityLevel: "strict",
+        theme: "base",
+        look: "handDrawn",
+        fontFamily: "inherit",
 
-    const { svg, bindFunctions } = use(
-        cachePromise(`${chart}-${resolvedTheme}`, () => {
-            return mermaid.render(id, chart.replaceAll('\\n', '\n'));
-        }),
-    );
+        themeVariables: {
+          darkMode: dark,
+          background: "transparent",
+          fontFamily: "inherit",
+          fontSize: "14px",
 
-    return (
-        <div
-            ref={(container) => {
-                if (container) bindFunctions?.(container);
-            }}
-            dangerouslySetInnerHTML={{ __html: svg }}
-        />
-    );
-} 
+          // Primary
+          primaryColor: dark ? "#1e293b" : "#f1f5f9",
+          primaryTextColor: dark ? "#e2e8f0" : "#1e293b",
+          primaryBorderColor: dark ? "#475569" : "#cbd5e1",
+
+          // Secondary
+          secondaryColor: dark ? "#172554" : "#eff6ff",
+          secondaryTextColor: dark ? "#bfdbfe" : "#1e40af",
+          secondaryBorderColor: dark ? "#3b82f6" : "#93c5fd",
+
+          // Tertiary
+          tertiaryColor: dark ? "#2e1065" : "#f5f3ff",
+          tertiaryTextColor: dark ? "#ddd6fe" : "#5b21b6",
+          tertiaryBorderColor: dark ? "#8b5cf6" : "#c4b5fd",
+
+          // Connections
+          lineColor: dark ? "#64748b" : "#94a3b8",
+          textColor: dark ? "#e2e8f0" : "#334155",
+
+          // Clusters
+          clusterBkg: dark ? "#111827" : "#f8fafc",
+          clusterBorder: dark ? "#334155" : "#e2e8f0",
+
+          // Edge labels
+          edgeLabelBackground: dark ? "#111827" : "#ffffff",
+        },
+
+        flowchart: {
+          curve: "basis",
+          nodeSpacing: 45,
+          rankSpacing: 55,
+          padding: 16,
+          htmlLabels: true,
+          useMaxWidth: true,
+        },
+      });
+
+      try {
+        const { svg, bindFunctions } = await mermaid.render(
+          `mermaid-${id}`,
+          chart,
+        );
+
+        if (cancelled || !containerRef.current) return;
+
+        containerRef.current.innerHTML = svg;
+        bindFunctions?.(containerRef.current);
+      } catch (error) {
+        if (cancelled || !containerRef.current) return;
+
+        console.error("Mermaid rendering failed:", error);
+        containerRef.current.textContent = chart;
+      }
+    }
+
+    void render();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [chart, id, resolvedTheme]);
+
+  return <div ref={containerRef} className="mermaid-container" />;
+}

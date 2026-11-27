@@ -8,8 +8,8 @@
 
 @theme {
   --font-sans:
-    var(--font-inter), ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
-    "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+    var(--font-inter), ui-sans-serif, system-ui, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
   --font-display:
     var(--font-syne), ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
     "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
@@ -238,4 +238,66 @@ html > body[data-scroll-locked] {
   html {
     @apply font-sans;
   }
+}
+
+.mermaid-container {
+  width: 100%;
+  overflow-x: auto;
+  margin: 2rem 0;
+  padding: 1.5rem;
+  border: 1px solid var(--color-fd-border);
+  border-radius: 0.75rem;
+  background: var(--color-fd-card);
+}
+
+.mermaid-container svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin-inline: auto;
+  font-family: inherit;
+}
+
+/* Node labels */
+.mermaid-container .nodeLabel {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* Edge labels */
+.mermaid-container .edgeLabel {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.mermaid-container .edgeLabel rect {
+  fill: var(--color-fd-card) !important;
+  opacity: 1;
+}
+
+/* Connections */
+.mermaid-container .flowchart-link {
+  stroke-width: 1.5px;
+}
+
+/* Subgraphs */
+.mermaid-container .cluster rect {
+  rx: 12px;
+  ry: 12px;
+}
+
+.mermaid-container .cluster-label {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+/* Decision nodes */
+.mermaid-container .decision polygon {
+  stroke-width: 1.5px;
+}
+
+/* Hide unnecessary backgrounds */
+.mermaid-container .labelBkg {
+  fill: transparent;
 }

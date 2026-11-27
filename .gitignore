@@ -13,3 +13,4 @@ dist/
 bin/act
 web/node_modules/
 web/.next/
+.agents/
